@@ -1,0 +1,21 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+pymysql
+aiomysql
+cryptography
+python-dotenv
+pyjwt
+python-multipart
+openpyxl
+apscheduler==3.11.0
+httpx
+redis
+hiredis
+bcrypt
+
+# 开发/工程化依赖
+alembic
+pytest
+pytest-asyncio
+aiosqlite

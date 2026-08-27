@@ -4,7 +4,10 @@
 - SHOP_CATEGORY_SETMEALS  (hash, key=category_id, value=JSON)
 """
 import json
+import logging
 from typing import Optional
+
+logger = logging.getLogger("uvicorn.error")
 
 import redis.asyncio as aioredis
 
@@ -13,6 +16,9 @@ from app.core.config import REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
 # 缓存 key 常量(与原项目一致)
 CACHE_DISHES = "SHOP_CATEGORY_DISHES"
 CACHE_SETMEALS = "SHOP_CATEGORY_SETMEALS"
+# 库存 key 前缀:stock:dish:{id} / stock:setmeal:{id}(string,无TTL;NULL库存不写key)
+STOCK_DISH_PREFIX = "stock:dish:"
+STOCK_SETMEAL_PREFIX = "stock:setmeal:"
 
 _pool: Optional[aioredis.ConnectionPool] = None
 
@@ -76,6 +82,12 @@ async def redis_get(key: str) -> Optional[str]:
     return await r.get(key)
 
 
+async def redis_set(key: str, value: str):
+    """写入 KV(无过期时间,如库存长期 key)"""
+    r = get_redis()
+    await r.set(key, value)
+
+
 async def redis_incr(key: str, ttl_seconds: int) -> int:
     """计数自增(首次自动设 TTL),返回当前计数值"""
     r = get_redis()
@@ -89,3 +101,42 @@ async def redis_delete(key: str):
     """删除 KV"""
     r = get_redis()
     await r.delete(key)
+
+
+async def redis_incrby(key: str, amount: int) -> int:
+    """KV 原子自增(库存回补),返回新值"""
+    r = get_redis()
+    return await r.incrby(key, amount)
+
+
+async def redis_decrby(key: str, amount: int) -> int:
+    """KV 原子自减(库存扣减),返回新值"""
+    r = get_redis()
+    return await r.decrby(key, amount)
+
+
+# 库存扣减 Lua 脚本:Redis 单线程执行,天然串行=天然防超卖。
+# 返回:0=跳过(无key,不限量或未预热,交 MySQL 兜底);-1=库存不足(回滚);>=0=扣减成功
+_STOCK_DEDUCT_LUA = """
+if redis.call('EXISTS', KEYS[1]) == 0 then
+    return 0
+end
+local stock = redis.call('DECRBY', KEYS[1], ARGV[1])
+if stock < 0 then
+    redis.call('INCRBY', KEYS[1], ARGV[1])
+    return -1
+end
+return stock
+"""
+
+
+async def redis_stock_deduct(key: str, amount: int) -> int:
+    """Redis Lua 原子扣减库存(抢购资格):0=跳过(交MySQL兜底);-1=不足;>=0=成功。
+    Redis 不可用时降级返回 0(放行,MySQL 兜底防超卖)。
+    """
+    r = get_redis()
+    try:
+        return int(await r.eval(_STOCK_DEDUCT_LUA, 1, key, amount))
+    except Exception as e:
+        logger.warning("库存Lua扣减降级(Redis不可用,跳过,MySQL兜底): %s", e)
+        return 0  # Redis 不可用降级:跳过,由 MySQL 兜底

@@ -5,6 +5,7 @@
 - 会话管理:登录时写入 session:{empId}=jti(新登录覆盖=单端登录);
   删除/禁用/改密时清除会话,该员工所有已签发 token 立即失效
 """
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -19,6 +20,8 @@ from app.core.config import (
 )
 from app.core.exceptions import LoginFailedException
 from app.utils.md5 import md5
+
+logger = logging.getLogger("uvicorn.error")
 
 # token 黑名单 key 前缀
 BLACKLIST_PREFIX = "token_blacklist:"
@@ -56,8 +59,8 @@ async def blacklist_token(token: str, secret: str):
         remaining = int(claims["exp"]) - int(datetime.now(timezone.utc).timestamp())
         if remaining > 0:
             await redis_setex(f"{BLACKLIST_PREFIX}{md5(token)}", remaining, "1")
-    except Exception:
-        pass  # Redis 不可用或 token 无效时静默(黑名单是增强项,不阻断登出)
+    except Exception as e:
+        logger.warning("token加入黑名单失败(登出不受影响,黑名单是增强项): %s", e)
 
 
 async def _is_blacklisted(token: str) -> bool:
@@ -66,7 +69,8 @@ async def _is_blacklisted(token: str) -> bool:
         from app.core.redis import redis_get
 
         return await redis_get(f"{BLACKLIST_PREFIX}{md5(token)}") is not None
-    except Exception:
+    except Exception as e:
+        logger.warning("黑名单校验降级(Redis不可用,放行): %s", e)
         return False
 
 
@@ -86,8 +90,8 @@ async def _verify_session(session_key: str, jti):
             raise LoginFailedException("token已失效,请重新登录")
     except LoginFailedException:
         raise
-    except Exception:
-        pass  # Redis 不可用降级放行
+    except Exception as e:
+        logger.warning("会话校验降级(Redis不可用,放行;即时失效能力暂失效): %s", e)
 
 
 async def _clear_session_by_key(session_key: str):
@@ -98,8 +102,8 @@ async def _clear_session_by_key(session_key: str):
         from app.core.redis import redis_delete
 
         await redis_delete(session_key)
-    except Exception:
-        pass  # Redis 不可用降级
+    except Exception as e:
+        logger.warning("清会话降级(Redis不可用): %s", e)
 
 
 async def clear_session_by_token(token: str, secret: str, prefix: str):
@@ -109,8 +113,8 @@ async def clear_session_by_token(token: str, secret: str, prefix: str):
         subject_id = claims.get("userId") or claims.get("empId")
         if subject_id is not None:
             await _clear_session_by_key(f"{prefix}{subject_id}")
-    except Exception:
-        pass  # token 无效/Redis 不可用时静默
+    except Exception as e:
+        logger.warning("按token清会话失败(token无效或Redis不可用): %s", e)
 
 
 async def get_current_admin(token: str = Header(default=None)) -> int:

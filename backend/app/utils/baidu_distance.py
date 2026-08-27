@@ -2,11 +2,14 @@
 - 配置了 BAIDU_AK:真实调用地理编码+距离计算
 - 未配置或调用失败:跳过距离校验(返回 0)
 """
+import logging
 import math
 
 import httpx
 
 from app.core.config import BAIDU_AK, SHOP_LAT, SHOP_LNG
+
+logger = logging.getLogger("uvicorn.error")
 
 
 async def get_distance(address: str) -> float:
@@ -27,7 +30,8 @@ async def get_distance(address: str) -> float:
             lng, lat = loc["lng"], loc["lat"]
         # 球面距离(公里)
         return _haversine(SHOP_LNG, SHOP_LAT, lng, lat)
-    except Exception:
+    except Exception as e:
+        logger.warning("百度地图距离校验降级(跳过5km校验): %s", e)
         return 0.0
 
 

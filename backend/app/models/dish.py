@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, Numeric, String, func
+from sqlalchemy import BigInteger, DateTime, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -19,6 +19,8 @@ class Dish(Base):
     image: Mapped[Optional[str]] = mapped_column(String(255), comment="图片")
     description: Mapped[Optional[str]] = mapped_column(String(255), comment="描述信息")
     status: Mapped[Optional[int]] = mapped_column(default=1, comment="0 停售 1 起售")  # 0停售 1起售
+    # 库存(NULL=不限量,>=0=剩余份数;下单预扣,取消/拒单/超时回补)
+    stock: Mapped[Optional[int]] = mapped_column(Integer, comment="库存(份),NULL=不限量")
     # 自动时间:ORM 层自动填充(行业主流);数据库保留 DEFAULT CURRENT_TIMESTAMP 兜底防绕过 ORM
     create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, default=func.now(), comment="创建时间")
     update_time: Mapped[Optional[datetime]] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), comment="更新时间")

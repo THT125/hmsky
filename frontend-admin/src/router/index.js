@@ -17,6 +17,7 @@ const routes = [
       { path: 'dish', name: 'Dish', component: () => import('../views/Dish.vue'), meta: { title: '菜品管理' } },
       { path: 'setmeal', name: 'Setmeal', component: () => import('../views/Setmeal.vue'), meta: { title: '套餐管理' } },
       { path: 'order', name: 'Order', component: () => import('../views/Order.vue'), meta: { title: '订单管理' } },
+      { path: 'chat', name: 'Chat', component: () => import('../views/Chat.vue'), meta: { title: '客服消息' } },
       { path: 'report', name: 'Report', component: () => import('../views/Report.vue'), meta: { title: '数据统计' } },
     ],
   },

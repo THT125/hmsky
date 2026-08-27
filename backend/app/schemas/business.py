@@ -53,6 +53,7 @@ class DishIn(CamelModel):
     image: str
     description: Optional[str] = None
     status: Optional[int] = 1
+    stock: Optional[int] = None  # 库存(份),空/NULL=不限量
     flavors: Optional[List[DishFlavorIn]] = []
 
 
@@ -72,6 +73,7 @@ class SetmealIn(CamelModel):
     image: str
     description: Optional[str] = None
     status: Optional[int] = 1
+    stock: Optional[int] = None  # 库存(份),空/NULL=不限量
     setmeal_dishes: Optional[List[SetmealDishIn]] = []
 
 
@@ -127,6 +129,16 @@ class UserChangePasswordIn(CamelModel):
 
 class SetDefaultIn(CamelModel):
     id: int
+
+
+# ===== 客服聊天 =====
+class ChatMessageIn(CamelModel):
+    content: str  # 用户端发送消息
+
+
+class ChatReplyIn(CamelModel):
+    user_id: int  # 管理端回复目标用户
+    content: str
 
 
 # ===== 订单 =====

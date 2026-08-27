@@ -23,13 +23,13 @@ async def save(
     新增套餐
 
     参数:
-    - body (SetmealIn): 套餐参数模型,包含 name 名称、categoryId 分类id、price 价格、image 图片、description 描述、status 状态、setmealDishes 套餐菜品列表。
+    - body (SetmealIn): 套餐参数模型,包含 name 名称、categoryId 分类id、price 价格、image 图片、description 描述、status 状态、stock 库存(空=不限量)、setmealDishes 套餐菜品列表。
 
     返回:
     - Result: 新增成功(create_user 记录当前操作人)。
     """
     await setmeal_service.save(db, emp_id, body.category_id, body.name, body.price, body.image,
-                               body.description, body.status, body.setmeal_dishes)
+                               body.description, body.status, body.setmeal_dishes, body.stock)
     return ok()
 
 
@@ -42,13 +42,13 @@ async def update(
     修改套餐
 
     参数:
-    - body (SetmealIn): 套餐参数模型,包含 id 套餐id及需要修改的字段。
+    - body (SetmealIn): 套餐参数模型,包含 id 套餐id及需要修改的字段(含 stock 库存,空=不限量)。
 
     返回:
     - Result: 修改成功(update_user 记录当前操作人)。
     """
     await setmeal_service.update(db, emp_id, body.id, body.category_id, body.name, body.price,
-                                 body.image, body.description, body.status, body.setmeal_dishes)
+                                 body.image, body.description, body.status, body.setmeal_dishes, body.stock)
     return ok()
 
 

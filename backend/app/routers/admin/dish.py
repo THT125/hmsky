@@ -22,13 +22,13 @@ async def save(body: DishIn, db: AsyncSession = Depends(get_db), emp_id: int = D
     新增菜品
 
     参数:
-    - body (DishIn): 菜品参数模型,包含 name 名称、categoryId 分类id、price 价格、image 图片、description 描述、status 状态、flavors 口味列表。
+    - body (DishIn): 菜品参数模型,包含 name 名称、categoryId 分类id、price 价格、image 图片、description 描述、status 状态、stock 库存(空=不限量)、flavors 口味列表。
 
     返回:
     - Result: 新增成功(create_user 记录当前操作人)。
     """
     await dish_service.save(db, emp_id, body.name, body.category_id, body.price, body.image,
-                            body.description, body.status, body.flavors)
+                            body.description, body.status, body.flavors, body.stock)
     return ok()
 
 
@@ -38,13 +38,13 @@ async def update(body: DishIn, db: AsyncSession = Depends(get_db), emp_id: int =
     修改菜品
 
     参数:
-    - body (DishIn): 菜品参数模型,包含 id 菜品id及需要修改的字段。
+    - body (DishIn): 菜品参数模型,包含 id 菜品id及需要修改的字段(含 stock 库存,空=不限量)。
 
     返回:
     - Result: 修改成功(update_user 记录当前操作人)。
     """
     await dish_service.update(db, emp_id, body.id, body.name, body.category_id, body.price,
-                              body.image, body.description, body.status, body.flavors)
+                              body.image, body.description, body.status, body.flavors, body.stock)
     return ok()
 
 

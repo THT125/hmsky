@@ -1,4 +1,5 @@
 """员工管理(文案与原 EmployeeServiceImpl 一致)"""
+import logging
 import re
 from typing import Optional
 
@@ -19,6 +20,8 @@ from app.core.security import SESSION_PREFIX, create_admin_token, new_jti
 from app.models import Employee, EmployeeLoginLog
 from app.utils.password import hash_password, is_bcrypt, verify_password
 
+logger = logging.getLogger("uvicorn.error")
+
 DEFAULT_PASSWORD = "123456"
 
 
@@ -28,8 +31,8 @@ async def _save_session(emp_id: int, jti: str):
         from app.core.redis import redis_setex
 
         await redis_setex(f"{SESSION_PREFIX}{emp_id}", ADMIN_TTL // 1000, jti)  # ms → s
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("写员工会话降级(Redis不可用,该员工无法被即时踢下线): %s", e)
 
 
 async def _clear_session(emp_id: int):
@@ -38,8 +41,8 @@ async def _clear_session(emp_id: int):
         from app.core.redis import redis_delete
 
         await redis_delete(f"{SESSION_PREFIX}{emp_id}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("清员工会话降级(Redis不可用,旧token可能暂未失效): %s", e)
 
 
 async def _add_login_log(db: AsyncSession, emp_id: Optional[int], username: str,

@@ -41,10 +41,17 @@ async def db():
 
 @pytest.fixture(autouse=True)
 async def _no_redis_writes(monkeypatch):
-    """测试环境不写真实 Redis:写操作(会话/黑名单/验证码)全局打桩为 no-op。
+    """测试环境不写真实 Redis:写操作(会话/黑名单/验证码/库存)全局打桩为 no-op。
     读操作不在此打桩,由各测试自行打桩(如会话校验、黑名单)。
     """
     async def _noop(*args, **kwargs):
         pass
     monkeypatch.setattr("app.core.redis.redis_setex", _noop)
     monkeypatch.setattr("app.core.redis.redis_delete", _noop)
+    monkeypatch.setattr("app.core.redis.redis_set", _noop)
+    monkeypatch.setattr("app.core.redis.redis_decrby", _noop)
+    monkeypatch.setattr("app.core.redis.redis_incrby", _noop)
+    # order_service 以 from-import 方式持有引用,需在其命名空间打桩;返回 0=跳过(MySQL 兜底)
+    async def _noop_deduct(*args, **kwargs):
+        return 0
+    monkeypatch.setattr("app.services.order_service.redis_stock_deduct", _noop_deduct)

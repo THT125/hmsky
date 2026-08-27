@@ -3,9 +3,12 @@
 - admin-*           管理端
 - user-{userId}-*   用户端(带用户 id,支持按用户定向推送)
 """
+import logging
 from typing import Dict, Optional
 
 from fastapi import WebSocket
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class WebSocketManager:
@@ -34,5 +37,5 @@ class WebSocketManager:
                 if prefix is not None and not sid.startswith(prefix):
                     continue
                 await ws.send_text(message)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("向连接 %s 推送失败(连接可能已断开): %s", sid, e)

@@ -1,13 +1,22 @@
 """订单业务(规则与原 OrderServiceImpl + OrderMapper 一致)"""
+import logging
 import random
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizException, OrderStateException
+
+logger = logging.getLogger("uvicorn.error")
+from app.core.redis import (
+    STOCK_DISH_PREFIX,
+    STOCK_SETMEAL_PREFIX,
+    redis_incrby,
+    redis_stock_deduct,
+)
 from app.models import AddressBook, Category, Dish, OrderDetail, Orders, Setmeal, ShoppingCart
 from app.schemas.business import OrdersSubmitIn
 from app.services.order_state import OrderStateMachine
@@ -16,6 +25,91 @@ from app.utils.baidu_distance import get_distance
 from app.websocket.ws import push_order_message
 
 DELIVERY_FEE = 6  # 固定配送费
+
+
+async def _redis_incr_stock(key: str, n: int):
+    """Redis 库存同步回补(失败降级,MySQL 为权威)"""
+    try:
+        await redis_incrby(key, n)
+    except Exception as e:
+        logger.warning("Redis库存回补降级(MySQL为权威,展示可能短暂滞后): %s", e)
+
+
+async def _deduct_stock(db: AsyncSession, cart_list: list) -> None:
+    """下单预扣库存(同一事务内,失败整单回滚)。
+
+    分层防超卖:
+    1. Redis Lua 原子扣减抢购资格(单线程串行,挡住 99% 并发请求)
+       - -1:已抢光,直接拒绝
+       - 0:跳过(不限量无 key / Redis 宕机降级)→ 交给 MySQL 兜底
+    2. MySQL 原子扣减(权威,UPDATE ... WHERE stock >= n,行数=1 才成功)
+       - 失败(理论罕见,Redis 与库不一致):回补 Redis 保持两边一致
+    """
+    for item in cart_list:
+        if item.dish_id is not None:
+            key = f"{STOCK_DISH_PREFIX}{item.dish_id}"
+            redis_ok = await redis_stock_deduct(key, item.number)
+            if redis_ok == -1:
+                raise BizException(f"菜品库存不足: {item.name}")
+            stock = await db.scalar(select(Dish.stock).where(Dish.id == item.dish_id))
+            if stock is None:
+                continue  # 不限量
+            r = await db.execute(
+                text("UPDATE dish SET stock = stock - :n WHERE id = :id AND stock >= :n"),
+                {"n": item.number, "id": item.dish_id},
+            )
+            if r.rowcount != 1:
+                if redis_ok > 0:  # Redis 已扣,回补保持一致
+                    await _redis_incr_stock(key, item.number)
+                raise BizException(f"菜品库存不足: {item.name}")
+        elif item.setmeal_id is not None:
+            key = f"{STOCK_SETMEAL_PREFIX}{item.setmeal_id}"
+            redis_ok = await redis_stock_deduct(key, item.number)
+            if redis_ok == -1:
+                raise BizException(f"套餐库存不足: {item.name}")
+            stock = await db.scalar(select(Setmeal.stock).where(Setmeal.id == item.setmeal_id))
+            if stock is None:
+                continue  # 不限量
+            r = await db.execute(
+                text("UPDATE setmeal SET stock = stock - :n WHERE id = :id AND stock >= :n"),
+                {"n": item.number, "id": item.setmeal_id},
+            )
+            if r.rowcount != 1:
+                if redis_ok > 0:  # Redis 已扣,回补保持一致
+                    await _redis_incr_stock(key, item.number)
+                raise BizException(f"套餐库存不足: {item.name}")
+
+
+async def _restore_stock(db: AsyncSession, order: Orders) -> None:
+    """取消/拒单/超时回补库存。
+    幂等:先原子抢占 orders.stock_restored(0→1),抢到才回补——
+    防超时任务与用户取消并发同一订单导致双回补。
+    """
+    claimed = await db.execute(
+        text("UPDATE orders SET stock_restored = 1 WHERE id = :id AND stock_restored = 0"),
+        {"id": order.id},
+    )
+    if claimed.rowcount != 1:
+        return  # 已被回补过(抢占失败)
+    details = list((await db.execute(
+        select(OrderDetail).where(OrderDetail.order_id == order.id)
+    )).scalars().all())
+    for d in details:
+        if d.dish_id is not None:
+            # 仅在 MySQL 实际回补(有限量)时同步 Redis,避免不限量商品被误建库存 key
+            r = await db.execute(
+                text("UPDATE dish SET stock = stock + :n WHERE id = :id AND stock IS NOT NULL"),
+                {"n": d.number, "id": d.dish_id},
+            )
+            if r.rowcount == 1:
+                await _redis_incr_stock(f"{STOCK_DISH_PREFIX}{d.dish_id}", d.number)
+        elif d.setmeal_id is not None:
+            r = await db.execute(
+                text("UPDATE setmeal SET stock = stock + :n WHERE id = :id AND stock IS NOT NULL"),
+                {"n": d.number, "id": d.setmeal_id},
+            )
+            if r.rowcount == 1:
+                await _redis_incr_stock(f"{STOCK_SETMEAL_PREFIX}{d.setmeal_id}", d.number)
 
 
 def _create_order_number(user_id: int) -> str:
@@ -71,6 +165,9 @@ async def submit(db: AsyncSession, user_id: int, dto: OrdersSubmitIn) -> dict:
     # 4. 店铺营业中校验
     if await get_status(db) == 0:
         raise OrderStateException("下单失败，店铺不在营业中")
+
+    # 4.1 下单预扣库存(不限量跳过;库存不足整单失败回滚)
+    await _deduct_stock(db, cart_list)
 
     # 5. 组装订单
     order = Orders(
@@ -221,6 +318,7 @@ async def repeat_order(db: AsyncSession, user_id: int, order_id: int):
 async def user_cancel(db: AsyncSession, user_id: int, order_id: int):
     order = await get_user_order_detail(db, user_id, order_id)
     OrderStateMachine(order).user_cancel()
+    await _restore_stock(db, order)  # 取消回补库存(幂等)
     await db.commit()
 
 
@@ -294,6 +392,7 @@ async def confirm(db: AsyncSession, order_id: int):
 async def rejection(db: AsyncSession, order_id: int, reason: str):
     order = await get_order_by_id(db, order_id)
     OrderStateMachine(order).admin_cancel(reason, is_rejection=True)
+    await _restore_stock(db, order)  # 拒单回补库存(幂等)
     await db.commit()
     await _push_status_change(order, "已取消")
 
@@ -301,6 +400,7 @@ async def rejection(db: AsyncSession, order_id: int, reason: str):
 async def admin_cancel(db: AsyncSession, order_id: int, reason: str):
     order = await get_order_by_id(db, order_id)
     OrderStateMachine(order).admin_cancel(reason, is_rejection=False)
+    await _restore_stock(db, order)  # 取消回补库存(幂等)
     await db.commit()
     await _push_status_change(order, "已取消")
 

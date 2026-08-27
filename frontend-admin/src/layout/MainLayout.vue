@@ -19,6 +19,7 @@
         <el-menu-item index="/dish"><el-icon><DishDot /></el-icon>菜品管理</el-menu-item>
         <el-menu-item index="/setmeal"><el-icon><Collection /></el-icon>套餐管理</el-menu-item>
         <el-menu-item index="/order"><el-icon><Document /></el-icon>订单管理</el-menu-item>
+        <el-menu-item index="/chat"><el-icon><ChatDotRound /></el-icon>客服消息</el-menu-item>
         <el-menu-item index="/report"><el-icon><DataAnalysis /></el-icon>数据统计</el-menu-item>
       </el-menu>
     </el-aside>
@@ -78,6 +79,11 @@ function connectWs() {
       window.dispatchEvent(new CustomEvent('order-push'))
     } else if (msg.type === 2) {
       ElNotification({ title: '催单提醒', message: msg.content, type: 'warning' })
+    } else if (msg.type === 6) {
+      // 客服消息:提示 + 广播事件,客服页会话列表自动刷新
+      const from = msg.chat && msg.chat.userId
+      ElNotification({ title: '用户消息', message: msg.content, type: 'info' })
+      window.dispatchEvent(new CustomEvent('chat-push-admin'))
     }
   }
   ws.onclose = () => { setTimeout(connectWs, 5000) }

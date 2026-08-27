@@ -28,6 +28,13 @@
         <el-table-column prop="status" label="状态" width="70">
           <template #default="{row}"><el-tag :type="row.status===1?'success':'danger'">{{ row.status===1?'起售':'停售' }}</el-tag></template>
         </el-table-column>
+        <el-table-column prop="stock" label="库存" width="90">
+          <template #default="{row}">
+            <span v-if="row.stock === null || row.stock === undefined">不限量</span>
+            <el-tag v-else-if="row.stock === 0" type="danger">已售罄</el-tag>
+            <span v-else>{{ row.stock }} 份</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="220">
           <template #default="{row}">
             <el-button size="small" @click="openDialog(row)">编辑</el-button>
@@ -49,6 +56,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="价格" prop="price"><el-input-number v-model="form.price" :precision="2" :min="0" /></el-form-item>
+        <el-form-item label="库存(份)">
+          <el-input-number v-model="form.stock" :min="0" :controls="false" placeholder="留空为不限量" style="width:200px" />
+          <span style="color:#999;font-size:12px;margin-left:8px">留空 = 不限量;售罄后用户端不可下单</span>
+        </el-form-item>
         <el-form-item label="图片">
           <div style="display:flex;gap:8px;align-items:center">
             <el-input v-model="form.image" placeholder="图片URL" />
@@ -83,7 +94,7 @@ const searchName = ref(''), searchCategory = ref(null), searchStatus = ref(null)
 const dialogVisible = ref(false), isEdit = ref(false), submitting = ref(false)
 const formRef = ref(null)
 const categoryList = ref([])
-const form = reactive({ id: null, name: '', categoryId: null, price: 0, image: '', description: '', status: 1, flavors: [] })
+const form = reactive({ id: null, name: '', categoryId: null, price: 0, image: '', description: '', status: 1, stock: null, flavors: [] })
 const rules = {
   name: [{ required: true, message: '必填', trigger: 'blur' }],
   categoryId: [{ required: true, message: '必填', trigger: 'change' }],
@@ -116,6 +127,7 @@ function openDialog(row) {
     Object.assign(form, {
       id: row.id, name: row.name, categoryId: row.categoryId, price: Number(row.price),
       image: row.image || '', description: row.description || '', status: row.status,
+      stock: row.stock ?? null,
       flavors: (row.flavors || []).map(f => ({ name: f.name, value: f.value })),
     })
   }
@@ -123,7 +135,7 @@ function openDialog(row) {
   dialogVisible.value = true
 }
 
-function resetForm() { Object.assign(form, { id: null, name: '', categoryId: null, price: 0, image: '', description: '', status: 1, flavors: [] }) }
+function resetForm() { Object.assign(form, { id: null, name: '', categoryId: null, price: 0, image: '', description: '', status: 1, stock: null, flavors: [] }) }
 
 async function submit() {
   const valid = await formRef.value.validate().catch(() => false)

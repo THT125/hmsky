@@ -11,12 +11,13 @@ from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
 from app.models import Orders
+from app.services.order_service import _restore_stock
 
 logger = logging.getLogger("uvicorn.error")
 
 
 async def deal_with_timeout_order():
-    """每60秒执行:查询超时未支付的订单并取消"""
+    """每60秒执行:查询超时未支付的订单并取消(回补库存,幂等)"""
     async with AsyncSessionLocal() as db:
         try:
             deadline = datetime.now() - timedelta(minutes=15)
@@ -27,6 +28,7 @@ async def deal_with_timeout_order():
                 order.status = 6
                 order.cancel_time = datetime.now()
                 order.cancel_reason = "支付超时，取消订单"
+                await _restore_stock(db, order)  # 超时取消回补库存(幂等,防与用户取消双回补)
             await db.commit()
             if rows:
                 logger.info(f"定时任务: 自动取消 {len(rows)} 个超时订单")

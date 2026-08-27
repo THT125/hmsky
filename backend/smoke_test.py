@@ -279,6 +279,55 @@ check("拒单原因写入rejectionReason", od4["data"]["rejectionReason"] == "�
 hist = call("GET", f"/user/order/historyOrders?page=1&pageSize=10", None, U)
 check("历史订单>=4条", hist["data"]["total"] >= 4, json.dumps(hist["data"], ensure_ascii=False))
 
+# ========== 7.5 库存管理(设置/扣减/售罄拦截/回补) ==========
+dish_upd = call("PUT", "/admin/dish", {
+    "id": dish_id, "name": dish_name, "categoryId": cat_id, "price": 29.9,
+    "image": "https://sky-itcast.oss-cn-beijing.aliyuncs.com/1.jpg", "description": "测试",
+    "status": 1, "stock": 1, "flavors": [{"name": "辣度", "value": "[\"不辣\",\"微辣\"]"}],
+}, A)
+check("设置菜品库存", result_ok(dish_upd), json.dumps(dish_upd, ensure_ascii=False))
+ud1 = call("GET", f"/user/dish/list?categoryId={cat_id}", None, U)
+rec1 = next((x for x in ud1["data"] if x["id"] == dish_id), None)
+check("用户端看到剩余库存", rec1 is not None and rec1["stock"] == 1, json.dumps(ud1["data"][:1], ensure_ascii=False))
+
+call("POST", "/user/shoppingCart/add", {"dishId": dish_id}, U)
+order_s = call("POST", "/user/order/submit", {
+    "addressBookId": addr_id, "amount": 30, "deliveryStatus": 1, "packAmount": 0,
+    "payMethod": 1, "remark": None, "tablewareNumber": 0, "tablewareStatus": 1,
+}, U)
+check("限量1下单成功", result_ok(order_s), json.dumps(order_s, ensure_ascii=False))
+call("POST", "/user/shoppingCart/add", {"dishId": dish_id}, U)
+order_s2 = call("POST", "/user/order/submit", {
+    "addressBookId": addr_id, "amount": 30, "deliveryStatus": 1, "packAmount": 0,
+    "payMethod": 1, "remark": None, "tablewareNumber": 0, "tablewareStatus": 1,
+}, U)
+check("售罄后下单被拒(库存不足)", order_s2.get("code") == 0, json.dumps(order_s2, ensure_ascii=False))
+call("DELETE", "/user/shoppingCart/clean", None, U)
+ud2 = call("GET", f"/user/dish/list?categoryId={cat_id}", None, U)
+rec2 = next((x for x in ud2["data"] if x["id"] == dish_id), None)
+check("用户端看到售罄", rec2 is not None and rec2["stock"] == 0, json.dumps(ud2["data"][:1], ensure_ascii=False))
+
+call("PUT", f"/user/order/cancel/{order_s['data']['id']}", None, U)
+ud3 = call("GET", f"/user/dish/list?categoryId={cat_id}", None, U)
+rec3 = next((x for x in ud3["data"] if x["id"] == dish_id), None)
+check("取消订单库存回补", rec3 is not None and rec3["stock"] == 1, json.dumps(ud3["data"][:1], ensure_ascii=False))
+
+# ========== 7.6 联系商家(在线客服) ==========
+cm = call("POST", "/user/chat/messages", {"content": "请问营业时间?"}, U)
+check("用户发送消息", result_ok(cm), json.dumps(cm, ensure_ascii=False))
+sess = call("GET", "/admin/chat/sessions", None, A)
+check("管理端会话列表(未读1)", result_ok(sess) and len(sess["data"]) >= 1 and sess["data"][0]["unread"] == 1,
+      json.dumps(sess["data"][:1], ensure_ascii=False))
+reply = call("POST", "/admin/chat/messages", {"userId": uid, "content": "9点到22点营业"}, A)
+check("商家回复", result_ok(reply), json.dumps(reply, ensure_ascii=False))
+um = call("GET", "/user/chat/messages", None, U)
+check("用户端看到回复", result_ok(um) and len(um["data"]) == 2 and um["data"][1]["senderType"] == "admin",
+      json.dumps(um["data"], ensure_ascii=False))
+check("用户已读", result_ok(call("POST", "/user/chat/read", None, U)))
+check("管理端已读", result_ok(call("POST", f"/admin/chat/read?userId={uid}", None, A)))
+sess2 = call("GET", "/admin/chat/sessions", None, A)
+check("已读后未读归零", result_ok(sess2) and sess2["data"][0]["unread"] == 0)
+
 # ========== 8. 工作台 & 报表 ==========
 biz = call("GET", "/admin/workspace/businessData", None, A)
 check("工作台今日数据", result_ok(biz) and biz["data"]["validOrderCount"] >= 1, json.dumps(biz["data"], ensure_ascii=False))

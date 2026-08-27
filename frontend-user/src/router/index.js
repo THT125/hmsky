@@ -17,6 +17,7 @@ const routes = [
   },
   { path: '/profile', name: 'Profile', component: () => import('../views/Profile.vue') },
   { path: '/change-password', name: 'ChangePassword', component: () => import('../views/ChangePassword.vue') },
+  { path: '/chat', name: 'Chat', component: () => import('../views/Chat.vue') },
   { path: '/order/confirm', name: 'OrderConfirm', component: () => import('../views/OrderConfirm.vue') },
   { path: '/order/detail/:id', name: 'OrderDetail', component: () => import('../views/OrderDetail.vue') },
   { path: '/address', name: 'AddressList', component: () => import('../views/AddressList.vue') },

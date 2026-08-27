@@ -1,4 +1,5 @@
 """C端用户注册/登录/资料(账号密码制:用户名+密码+图形验证码)"""
+import logging
 from typing import Optional
 
 from sqlalchemy import func, select
@@ -18,6 +19,8 @@ from app.core.security import SESSION_USER_PREFIX, create_user_token, new_jti
 from app.models import User, UserLoginLog
 from app.utils.password import hash_password, verify_password
 
+logger = logging.getLogger("uvicorn.error")
+
 
 async def _save_session(user_id: int, jti: str):
     """登录写会话(新登录覆盖旧会话=单端登录);Redis 不可用时降级跳过"""
@@ -25,8 +28,8 @@ async def _save_session(user_id: int, jti: str):
         from app.core.redis import redis_setex
 
         await redis_setex(f"{SESSION_USER_PREFIX}{user_id}", USER_TTL // 1000, jti)  # ms → s
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("写用户会话降级(Redis不可用,该用户无法被即时踢下线): %s", e)
 
 
 async def _clear_session(user_id: int):
@@ -35,8 +38,8 @@ async def _clear_session(user_id: int):
         from app.core.redis import redis_delete
 
         await redis_delete(f"{SESSION_USER_PREFIX}{user_id}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("清用户会话降级(Redis不可用,旧token可能暂未失效): %s", e)
 
 
 async def _add_login_log(db: AsyncSession, user_id: Optional[int],

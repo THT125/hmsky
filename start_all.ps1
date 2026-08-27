@@ -16,8 +16,8 @@ Start-Process -FilePath "npx" -ArgumentList "vite", "--host" -WorkingDirectory "
 Start-Sleep -Seconds 3
 
 Write-Host "`n[3/3] 启动用户端前端 (端口 5174)..." -ForegroundColor Green
-Start-Process -FilePath "npx" -ArgumentList "vite", "--port", "5174" -WorkingDirectory "$PSScriptRoot\frontend-user" -NoNewWindow
-
+Start-Process -FilePath "npx" -ArgumentList "vite", "--host", "--port", "5174" -WorkingDirectory "$PSScriptRoot\frontend-user" -NoNewWindow     #内网测试
+#Start-Process -FilePath "npx" -ArgumentList "vite",  "--port", "5174" -WorkingDirectory "$PSScriptRoot\frontend-user" -NoNewWindow
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  启动完成！" -ForegroundColor Yellow
 Write-Host "  管理端: http://localhost:5173" -ForegroundColor Yellow

@@ -20,14 +20,20 @@
       <!-- 右侧内容 -->
       <div style="flex:1;overflow-y:auto;padding:12px">
         <!-- 菜品列表 -->
-        <div v-for="d in dishes" :key="'d'+d.id" style="display:flex;background:#fff;margin-bottom:10px;border-radius:8px;padding:8px">
+        <div v-for="d in dishes" :key="'d'+d.id" style="display:flex;background:#fff;margin-bottom:10px;border-radius:8px;padding:8px;opacity:isSoldOut(d)?0.55:1">
           <van-image :src="d.image" width="80" height="80" fit="cover" radius="6" style="flex-shrink:0" />
           <div style="flex:1;margin-left:10px">
-            <div style="font-size:15px;font-weight:500">{{ d.name }}</div>
+            <div style="font-size:15px;font-weight:500">
+              {{ d.name }}
+              <van-tag v-if="isSoldOut(d)" type="danger">已售罄</van-tag>
+            </div>
             <div style="color:#999;font-size:12px;margin:4px 0">{{ d.description }}</div>
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="color:#ee0a24;font-size:16px">¥{{ d.price }}</span>
-              <van-icon name="add" size="22" :color="catDisabled ? '#ccc' : '#ee0a24'" @click="addDish(d)" />
+              <span style="display:flex;align-items:center;gap:8px">
+                <span v-if="d.stock !== null && d.stock !== undefined && d.stock > 0" style="font-size:12px;color:#ff976a">剩 {{ d.stock }} 份</span>
+                <van-icon name="add" size="22" :color="(catDisabled || isSoldOut(d)) ? '#ccc' : '#ee0a24'" @click="addDish(d)" />
+              </span>
             </div>
             <!-- 口味选择(若有) -->
             <div v-if="d.flavors&&d.flavors.length" style="margin-top:6px">
@@ -43,14 +49,20 @@
           </div>
         </div>
         <!-- 套餐列表 -->
-        <div v-for="s in setmeals" :key="'s'+s.id" style="display:flex;background:#fff;margin-bottom:10px;border-radius:8px;padding:8px">
+        <div v-for="s in setmeals" :key="'s'+s.id" style="display:flex;background:#fff;margin-bottom:10px;border-radius:8px;padding:8px;opacity:isSoldOut(s)?0.55:1">
           <van-image :src="s.image" width="80" height="80" fit="cover" radius="6" style="flex-shrink:0" />
           <div style="flex:1;margin-left:10px">
-            <div style="font-size:15px;font-weight:500;color:#323233">{{ s.name }}</div>
+            <div style="font-size:15px;font-weight:500;color:#323233">
+              {{ s.name }}
+              <van-tag v-if="isSoldOut(s)" type="danger">已售罄</van-tag>
+            </div>
             <div style="color:#999;font-size:12px;margin:4px 0">{{ s.description }}</div>
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="color:#ee0a24;font-size:16px">¥{{ s.price }}</span>
-              <van-icon name="add" size="22" :color="catDisabled ? '#ccc' : '#ee0a24'" @click="addSetmeal(s)" />
+              <span style="display:flex;align-items:center;gap:8px">
+                <span v-if="s.stock !== null && s.stock !== undefined && s.stock > 0" style="font-size:12px;color:#ff976a">剩 {{ s.stock }} 份</span>
+                <van-icon name="add" size="22" :color="(catDisabled || isSoldOut(s)) ? '#ccc' : '#ee0a24'" @click="addSetmeal(s)" />
+              </span>
             </div>
           </div>
         </div>
@@ -78,6 +90,11 @@ const catDisabled = computed(() => selectedCat.value && selectedCat.value.status
 
 function parseValues(val) {
   try { return JSON.parse(val) } catch { return [] }
+}
+
+// 售罄判定:stock === 0(仅有限量商品;null=不限量不算售罄)
+function isSoldOut(item) {
+  return item.stock === 0
 }
 
 async function init() {
@@ -129,6 +146,7 @@ async function selectCategory(cat) {
 
 async function addDish(d) {
   if (catDisabled.value) { showToast('该分类已禁用，无法购买'); return }
+  if (isSoldOut(d)) { showToast('该菜品已售罄'); return }
   const flavor = selectedFlavors.value[d.id] || null
   await request.post('/user/shoppingCart/add', { dishId: d.id, dishFlavor: flavor })
   showToast('已加入购物车')
@@ -136,6 +154,7 @@ async function addDish(d) {
 
 async function addSetmeal(s) {
   if (catDisabled.value) { showToast('该分类已禁用，无法购买'); return }
+  if (isSoldOut(s)) { showToast('该套餐已售罄'); return }
   await request.post('/user/shoppingCart/add', { setmealId: s.id })
   showToast('已加入购物车')
 }

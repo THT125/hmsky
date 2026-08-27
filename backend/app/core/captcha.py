@@ -1,19 +1,23 @@
 """图形验证码:4 位数字 + 干扰线,PIL 生成 base64 图片"""
 import base64
 import io
+import logging
 import random
 
 from PIL import Image, ImageDraw, ImageFont
 
+logger = logging.getLogger("uvicorn.error")
+
 WIDTH, HEIGHT = 120, 40
 CODE_LEN = 4
-_FONT_PATH = r"C:\Windows\Fonts\arial.ttf"  # 优先英文字体(数字更清晰);不存在则用默认字体
+_FONT_PATH = r"backend\assets\font\Arial.ttf"  # 优先英文字体(数字更清晰);不存在则用默认字体
 
 
 def _font(size: int):
     try:
         return ImageFont.truetype(_FONT_PATH, size)
-    except Exception:
+    except Exception as e:
+        logger.warning("验证码字体加载失败,降级默认字体: %s", e)
         return ImageFont.load_default()
 
 

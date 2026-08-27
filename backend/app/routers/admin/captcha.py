@@ -1,10 +1,14 @@
 """管理端:图形验证码 /admin/captcha(白名单,无需token)"""
+import logging
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from app.core.captcha import generate_captcha
 from app.core.config import CAPTCHA_ENABLED
 from app.core.redis import redis_setex
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/admin/captcha", tags=["验证码"])
 
@@ -26,11 +30,11 @@ async def get_captcha():
     import uuid as uuid_lib
 
     code, image = generate_captcha()
-    cid = uuid_lib.uuid4().hex
+    cid = uuid_lib.uuid4().hex           #hex  转16进制字符串
     try:
         await redis_setex(f"captcha:{cid}", CAPTCHA_TTL, code)
-    except Exception:
-        pass  # Redis 不可用:验证码校验将降级放行
+    except Exception as e:
+        logger.warning("验证码写入Redis降级(校验将放行): %s", e)
     data = {"uuid": cid, "image": image}
     if not CAPTCHA_ENABLED:
         data["code"] = code  # 测试模式返回明文,便于自动化测试

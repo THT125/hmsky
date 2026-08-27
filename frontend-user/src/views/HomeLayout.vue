@@ -36,6 +36,10 @@ function connectWs() {
       } else if (msg.type === 5) {
         // 菜单变更:首页分类/菜品自动刷新
         window.dispatchEvent(new CustomEvent('menu-update'))
+      } else if (msg.type === 6) {
+        // 客服消息:提示并广播事件,聊天页实时追加
+        showNotify({ type: 'primary', message: '商家回复: ' + msg.content })
+        window.dispatchEvent(new CustomEvent('chat-push-user'))
       }
     } catch {}
   }

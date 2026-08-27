@@ -1,4 +1,5 @@
 """套餐管理(文案与原 SetMealServiceImpl 一致,Redis 缓存与原项目一致)"""
+import logging
 from decimal import Decimal
 from typing import List, Optional
 
@@ -6,7 +7,18 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizException
-from app.core.redis import CACHE_SETMEALS, delete_key, hget_json, hset_json
+
+logger = logging.getLogger("uvicorn.error")
+from app.core.redis import (
+    CACHE_SETMEALS,
+    STOCK_SETMEAL_PREFIX,
+    delete_key,
+    hget_json,
+    hset_json,
+    redis_delete,
+    redis_get,
+    redis_set,
+)
 from app.models import Category, Dish, Setmeal, SetmealDish
 from app.schemas.business import SetmealDishIn
 from app.websocket.ws import push_menu_update
@@ -16,9 +28,37 @@ async def _invalidate_cache():
     """清除全部套餐缓存(等价于原项目 deleteAllSetMealCache)并推送菜单变更"""
     try:
         await delete_key(CACHE_SETMEALS)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("清除套餐缓存降级(Redis不可用): %s", e)
     await push_menu_update()  # 通知用户端刷新菜单
+
+
+async def sync_stock_key(setmeal_id: int, stock: Optional[int]):
+    """同步套餐库存到 Redis(NULL=不限量,删除 key)"""
+    try:
+        if stock is None:
+            await redis_delete(f"{STOCK_SETMEAL_PREFIX}{setmeal_id}")
+        else:
+            await redis_set(f"{STOCK_SETMEAL_PREFIX}{setmeal_id}", str(stock))
+    except Exception as e:
+        logger.warning("同步套餐库存到Redis降级(MySQL为权威): %s", e)
+
+
+async def _attach_stock(db: AsyncSession, vo: dict) -> dict:
+    """把实时库存合并进 VO:优先 Redis key,miss 以 MySQL 为准刷新"""
+    try:
+        cached = await redis_get(f"{STOCK_SETMEAL_PREFIX}{vo['id']}")
+        if cached is not None:
+            vo["stock"] = int(cached)
+        else:
+            setmeal = await db.get(Setmeal, vo["id"])
+            if setmeal is not None:
+                vo["stock"] = setmeal.stock
+                if setmeal.stock is not None:
+                    await redis_set(f"{STOCK_SETMEAL_PREFIX}{vo['id']}", str(setmeal.stock))
+    except Exception as e:
+        logger.warning("合并套餐实时库存降级(保留MySQL值): %s", e)
+    return vo
 
 
 async def _check_dishes_exist_and_selling(db: AsyncSession, setmeal_dishes: List[SetmealDishIn]):
@@ -32,7 +72,8 @@ async def _check_dishes_exist_and_selling(db: AsyncSession, setmeal_dishes: List
 
 
 async def save(db: AsyncSession, operator_id: int, category_id: int, name: str, price: Decimal, image: str,
-               description: Optional[str], status: Optional[int], setmeal_dishes: List[SetmealDishIn]):
+               description: Optional[str], status: Optional[int], setmeal_dishes: List[SetmealDishIn],
+               stock: Optional[int] = None):
     if await db.get(Category, category_id) is None:
         raise BizException("分类ID不存在")
     if (await db.scalar(select(func.count(Setmeal.id)).where(Setmeal.name == name)) or 0) != 0:
@@ -40,7 +81,8 @@ async def save(db: AsyncSession, operator_id: int, category_id: int, name: str, 
     await _check_dishes_exist_and_selling(db, setmeal_dishes)
 
     setmeal = Setmeal(category_id=category_id, name=name, price=price, image=image,
-                      description=description, status=status if status is not None else 1)
+                      description=description, status=status if status is not None else 1,
+                      stock=stock)
     setmeal.create_user = operator_id  # 创建人(当前登录管理员)
     db.add(setmeal)
     await db.flush()
@@ -48,12 +90,14 @@ async def save(db: AsyncSession, operator_id: int, category_id: int, name: str, 
         db.add(SetmealDish(setmeal_id=setmeal.id, dish_id=sd.dish_id,
                            name=sd.name, price=sd.price, copies=sd.copies))
     await db.commit()
+    await sync_stock_key(setmeal.id, setmeal.stock)
     await _invalidate_cache()
     return setmeal
 
 
 async def update(db: AsyncSession, operator_id: int, setmeal_id: int, category_id: int, name: str, price: Decimal, image: str,
-                 description: Optional[str], status: Optional[int], setmeal_dishes: List[SetmealDishIn]):
+                 description: Optional[str], status: Optional[int], setmeal_dishes: List[SetmealDishIn],
+                 stock: Optional[int] = None):
     old = await get_by_id(db, setmeal_id)
     if old.name != name and (await db.scalar(select(func.count(Setmeal.id)).where(Setmeal.name == name)) or 0) != 0:
         raise BizException("套餐名称重复")
@@ -66,6 +110,7 @@ async def update(db: AsyncSession, operator_id: int, setmeal_id: int, category_i
     old.description = description
     if status is not None:
         old.status = status
+    old.stock = stock  # 编辑保存=全量设置(NULL 表示改为不限量)
     old.update_user = operator_id  # 修改人(当前登录管理员)
     # 套餐菜品先删后插
     await db.execute(delete(SetmealDish).where(SetmealDish.setmeal_id == setmeal_id))
@@ -73,6 +118,7 @@ async def update(db: AsyncSession, operator_id: int, setmeal_id: int, category_i
         db.add(SetmealDish(setmeal_id=setmeal_id, dish_id=sd.dish_id,
                            name=sd.name, price=sd.price, copies=sd.copies))
     await db.commit()
+    await sync_stock_key(setmeal_id, old.stock)
     await _invalidate_cache()
     return old
 
@@ -87,6 +133,11 @@ async def delete_by_ids(db: AsyncSession, ids: List[int]):
     await db.execute(delete(SetmealDish).where(SetmealDish.setmeal_id.in_(not_selling)))
     await db.execute(delete(Setmeal).where(Setmeal.id.in_(not_selling)))
     await db.commit()
+    for sid in not_selling:
+        try:
+            await redis_delete(f"{STOCK_SETMEAL_PREFIX}{sid}")
+        except Exception as e:
+            logger.warning("删除套餐库存key降级: %s", e)
     await _invalidate_cache()
 
 
@@ -130,11 +181,15 @@ async def list_by_category(db: AsyncSession, category_id: int, only_selling: boo
     try:
         cached = await hget_json(CACHE_SETMEALS, str(category_id))
         if cached is not None:
-            if only_selling:
-                return [s for s in cached if s.get("status") == 1]
-            return cached
-    except Exception:
-        pass
+            # 库存是高频变动数据,不在 VO 缓存中:命中后逐个合并实时库存
+            merged = []
+            for s in cached:
+                if only_selling and s.get("status") != 1:
+                    continue
+                merged.append(await _attach_stock(db, s))
+            return merged
+    except Exception as e:
+        logger.warning("读套餐缓存降级(查DB): %s", e)
 
     conds = [Setmeal.category_id == category_id]
     if only_selling:
@@ -149,8 +204,8 @@ async def list_by_category(db: AsyncSession, category_id: int, only_selling: boo
         )).scalars().all()
         all_vo = [await build_vo(db, s) for s in all_setmeals]
         await hset_json(CACHE_SETMEALS, str(category_id), all_vo)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("回填套餐缓存降级: %s", e)
 
     return result
 
@@ -176,6 +231,7 @@ async def build_vo(db: AsyncSession, setmeal: Setmeal) -> dict:
         "name": setmeal.name,
         "price": str(setmeal.price) if setmeal.price is not None else None,
         "status": setmeal.status,
+        "stock": setmeal.stock,
         "description": setmeal.description,
         "image": setmeal.image,
         "createTime": setmeal.create_time,

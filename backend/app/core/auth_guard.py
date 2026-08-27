@@ -1,9 +1,12 @@
 """登录安全公共逻辑:图形验证码校验、失败锁定、密码强度(管理端/用户端共用)"""
+import logging
 import re
 
 from app.core.config import LOGIN_FAIL_LOCK_MINUTES, LOGIN_FAIL_MAX
 from app.core.exceptions import BizException, LoginFailedException
 from app.core.redis import redis_delete, redis_get, redis_incr
+
+logger = logging.getLogger("uvicorn.error")
 
 _CAPTCHA_PREFIX = "captcha:"
 _FAIL_PREFIX = "login_fail:"
@@ -20,7 +23,8 @@ async def verify_captcha(uuid: str, code: str):
         raise LoginFailedException("请输入验证码")
     try:
         saved = await redis_get(f"{_CAPTCHA_PREFIX}{uuid}")
-    except Exception:
+    except Exception as e:
+        logger.warning("验证码校验降级(Redis不可用,放行): %s", e)
         return  # Redis 不可用:放行
     await redis_delete(f"{_CAPTCHA_PREFIX}{uuid}")  # 一次性,无论对错都销毁
     if saved is None or saved != code:
@@ -33,7 +37,8 @@ async def check_login_locked(username: str):
     """连续失败超过阈值则锁定一段时间"""
     try:
         count = int(await redis_get(f"{_FAIL_PREFIX}{username}") or 0)
-    except Exception:
+    except Exception as e:
+        logger.warning("失败计数读取降级(Redis不可用,不锁定): %s", e)
         count = 0  # Redis 不可用:不锁定
     if count >= LOGIN_FAIL_MAX:
         raise LoginFailedException(f"登录失败次数过多，账号已锁定{LOGIN_FAIL_LOCK_MINUTES}分钟")
@@ -43,16 +48,16 @@ async def record_login_fail(username: str):
     """记录失败次数(带 TTL 自动过期解锁)"""
     try:
         await redis_incr(f"{_FAIL_PREFIX}{username}", LOGIN_FAIL_LOCK_MINUTES * 60)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("记录失败次数降级(Redis不可用,锁定防护暂失效): %s", e)
 
 
 async def clear_login_fail(username: str):
     """登录成功清零失败计数"""
     try:
         await redis_delete(f"{_FAIL_PREFIX}{username}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("清零失败计数降级(Redis不可用): %s", e)
 
 
 # ===== 密码强度 =====

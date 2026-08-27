@@ -1,11 +1,23 @@
 """菜品管理(文案与原 DishServiceImpl 一致,Redis 缓存与原项目一致)"""
+import logging
 from typing import List, Optional
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizException
-from app.core.redis import CACHE_DISHES, delete_key, hget_json, hset_json
+
+logger = logging.getLogger("uvicorn.error")
+from app.core.redis import (
+    CACHE_DISHES,
+    STOCK_DISH_PREFIX,
+    delete_key,
+    hget_json,
+    hset_json,
+    redis_delete,
+    redis_get,
+    redis_set,
+)
 from app.models import Category, Dish, DishFlavor, SetmealDish
 from app.schemas.business import DishFlavorIn
 from app.websocket.ws import push_menu_update
@@ -15,25 +27,56 @@ async def _invalidate_cache():
     """清除全部菜品缓存(等价于原项目 deleteAllDishCache)并推送菜单变更"""
     try:
         await delete_key(CACHE_DISHES)
-    except Exception:
-        pass  # Redis 不可用时静默
+    except Exception as e:
+        logger.warning("清除菜品缓存降级(Redis不可用): %s", e)
     await push_menu_update()  # 通知用户端刷新菜单
 
 
+async def sync_stock_key(dish_id: int, stock: Optional[int]):
+    """同步菜品库存到 Redis(NULL=不限量,删除 key)"""
+    try:
+        if stock is None:
+            await redis_delete(f"{STOCK_DISH_PREFIX}{dish_id}")
+        else:
+            await redis_set(f"{STOCK_DISH_PREFIX}{dish_id}", str(stock))
+    except Exception as e:
+        logger.warning("同步菜品库存到Redis降级(MySQL为权威): %s", e)
+
+
+async def _attach_stock(db: AsyncSession, vo: dict) -> dict:
+    """把实时库存合并进 VO:优先 Redis key,miss 以 MySQL 为准刷新"""
+    try:
+        cached = await redis_get(f"{STOCK_DISH_PREFIX}{vo['id']}")
+        if cached is not None:
+            vo["stock"] = int(cached)
+        else:
+            dish = await db.get(Dish, vo["id"])
+            if dish is not None:
+                vo["stock"] = dish.stock
+                if dish.stock is not None:
+                    await redis_set(f"{STOCK_DISH_PREFIX}{vo['id']}", str(dish.stock))
+    except Exception as e:
+        logger.warning("合并菜品实时库存降级(保留MySQL值): %s", e)
+    return vo
+
+
 async def save(db: AsyncSession, operator_id: int, name: str, category_id: int, price, image: str,
-               description: Optional[str], status: Optional[int], flavors: List[DishFlavorIn]):
+               description: Optional[str], status: Optional[int], flavors: List[DishFlavorIn],
+               stock: Optional[int] = None):
     if (await db.scalar(select(func.count(Dish.id)).where(Dish.name == name))) > 0:
         raise BizException("菜品名称重复")
     if await db.get(Category, category_id) is None:
         raise BizException("分类ID不存在")
     dish = Dish(name=name, category_id=category_id, price=price, image=image,
-                description=description, status=status if status is not None else 1)
+                description=description, status=status if status is not None else 1,
+                stock=stock)
     dish.create_user = operator_id  # 创建人(当前登录管理员)
     db.add(dish)
     await db.flush()
     for f in flavors or []:
         db.add(DishFlavor(dish_id=dish.id, name=f.name, value=f.value))
     await db.commit()
+    await sync_stock_key(dish.id, dish.stock)
     await _invalidate_cache()
     return dish
 
@@ -47,7 +90,8 @@ async def update(
         price, image: str,
         description: Optional[str],
         status: Optional[int],
-        flavors: List[DishFlavorIn]
+        flavors: List[DishFlavorIn],
+        stock: Optional[int] = None
         ):
     dish = await db.get(Dish, dish_id)
     if dish is None:
@@ -61,12 +105,14 @@ async def update(
     dish.description = description
     if status is not None:
         dish.status = status
+    dish.stock = stock  # 编辑保存=全量设置(NULL 表示改为不限量)
     dish.update_user = operator_id  # 修改人(当前登录管理员)
     # 口味先删后插
     await db.execute(delete(DishFlavor).where(DishFlavor.dish_id == dish_id))
     for f in flavors or []:
         db.add(DishFlavor(dish_id=dish_id, name=f.name, value=f.value))
     await db.commit()
+    await sync_stock_key(dish_id, dish.stock)
     await _invalidate_cache()
     return dish
 
@@ -85,6 +131,11 @@ async def delete_by_ids(db: AsyncSession, ids: List[int]):
     await db.execute(delete(DishFlavor).where(DishFlavor.dish_id.in_(ids)))
     await db.execute(delete(Dish).where(Dish.id.in_(ids)))
     await db.commit()
+    for did in ids:
+        try:
+            await redis_delete(f"{STOCK_DISH_PREFIX}{did}")
+        except Exception as e:
+            logger.warning("删除菜品库存key降级: %s", e)
     await _invalidate_cache()
 
 
@@ -137,11 +188,15 @@ async def list_by_category(db: AsyncSession, category_id: int, only_selling: boo
     try:
         cached = await hget_json(CACHE_DISHES, str(category_id))
         if cached is not None:
-            if only_selling:
-                return [d for d in cached if d.get("status") == 1]
-            return cached
-    except Exception:
-        pass  # Redis 不可用时降级查 DB
+            # 库存是高频变动数据,不在 VO 缓存中:命中后逐个合并实时库存
+            merged = []
+            for d in cached:
+                if only_selling and d.get("status") != 1:
+                    continue
+                merged.append(await _attach_stock(db, d))
+            return merged
+    except Exception as e:
+        logger.warning("读菜品缓存降级(查DB): %s", e)
 
     # 2. 缓存未命中 → 查 DB
     conds = [Dish.category_id == category_id]
@@ -159,8 +214,8 @@ async def list_by_category(db: AsyncSession, category_id: int, only_selling: boo
         )).scalars().all()
         all_vo = [await build_vo(db, d) for d in all_dishes]
         await hset_json(CACHE_DISHES, str(category_id), all_vo)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("回填菜品缓存降级: %s", e)
 
     return result
 
@@ -187,6 +242,7 @@ async def build_vo(db: AsyncSession, dish: Dish) -> dict:
         "image": dish.image,
         "description": dish.description,
         "status": dish.status,
+        "stock": dish.stock,
         "createTime": dish.create_time,
         "updateTime": dish.update_time,
         "flavors": await get_flavors(db, dish.id),

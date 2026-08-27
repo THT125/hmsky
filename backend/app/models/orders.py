@@ -39,6 +39,8 @@ class Orders(Base):
     pack_amount: Mapped[Optional[int]] = mapped_column(comment="打包费")
     tableware_number: Mapped[Optional[int]] = mapped_column(comment="餐具数量")
     tableware_status: Mapped[Optional[int]] = mapped_column(Integer, nullable=False, default=1, comment="餐具数量状态  1按餐量提供  0选择具体数量")  # 1按餐量提供 0选择数量
+    # 库存回补幂等标志:0未回补 1已回补(防超时任务与取消并发双回补)
+    stock_restored: Mapped[Optional[int]] = mapped_column(Integer, nullable=False, default=0, server_default="0", comment="库存是否已回补 0否 1是")
 
 
 class OrderDetail(Base):

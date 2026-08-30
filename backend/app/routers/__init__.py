@@ -5,6 +5,7 @@ from app.routers.admin import (
     category as admin_category,
     chat as admin_chat,
     common as admin_common,
+    coupon as admin_coupon,
     dish as admin_dish,
     employee as admin_employee,
     order as admin_order,
@@ -19,6 +20,7 @@ from app.routers.user import (
     category as user_category,
     chat as user_chat,
     common as user_common,
+    coupon as user_coupon,
     dish as user_dish,
     order as user_order,
     setmeal as user_setmeal,
@@ -41,6 +43,7 @@ api_router.include_router(admin_report.router)
 api_router.include_router(admin_shop.router)
 api_router.include_router(admin_common.router)
 api_router.include_router(admin_chat.router)
+api_router.include_router(admin_coupon.router)
 
 # 用户端
 api_router.include_router(user_captcha.router)
@@ -54,3 +57,4 @@ api_router.include_router(user_cart.router)
 api_router.include_router(user_address.router)
 api_router.include_router(user_order.router)
 api_router.include_router(user_chat.router)
+api_router.include_router(user_coupon.router)

@@ -20,6 +20,7 @@
         <el-menu-item index="/setmeal"><el-icon><Collection /></el-icon>套餐管理</el-menu-item>
         <el-menu-item index="/order"><el-icon><Document /></el-icon>订单管理</el-menu-item>
         <el-menu-item index="/chat"><el-icon><ChatDotRound /></el-icon>客服消息</el-menu-item>
+        <el-menu-item index="/coupon"><el-icon><Ticket /></el-icon>优惠券管理</el-menu-item>
         <el-menu-item index="/report"><el-icon><DataAnalysis /></el-icon>数据统计</el-menu-item>
       </el-menu>
     </el-aside>

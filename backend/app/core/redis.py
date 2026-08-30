@@ -19,6 +19,9 @@ CACHE_SETMEALS = "SHOP_CATEGORY_SETMEALS"
 # 库存 key 前缀:stock:dish:{id} / stock:setmeal:{id}(string,无TTL;NULL库存不写key)
 STOCK_DISH_PREFIX = "stock:dish:"
 STOCK_SETMEAL_PREFIX = "stock:setmeal:"
+# 优惠券 key 前缀:coupon:stock:{id}(存量,TTL=活动剩余) / coupon:user:{couponId}:{userId}(限领标记)
+COUPON_STOCK_PREFIX = "coupon:stock:"
+COUPON_USER_PREFIX = "coupon:user:"
 
 _pool: Optional[aioredis.ConnectionPool] = None
 
@@ -101,6 +104,13 @@ async def redis_delete(key: str):
     """删除 KV"""
     r = get_redis()
     await r.delete(key)
+
+
+async def redis_setnx(key: str, value: str, ttl_seconds: int) -> bool:
+    """SETNX + TTL:key 不存在时写入并设过期时间,返回是否写入成功(一人限领/幂等标记)"""
+    r = get_redis()
+    ok = await r.set(key, value, nx=True, ex=ttl_seconds)
+    return bool(ok)
 
 
 async def redis_incrby(key: str, amount: int) -> int:

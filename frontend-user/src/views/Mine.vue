@@ -10,6 +10,7 @@
     <van-cell-group style="border-radius:8px;overflow:hidden">
       <van-cell title="我的地址" is-link icon="location-o" to="/address" />
       <van-cell title="我的订单" is-link icon="orders-o" to="/orders" />
+      <van-cell title="领券中心" is-link icon="coupon-o" to="/coupon" />
       <van-cell title="联系商家" is-link icon="chat-o" to="/chat" />
       <van-cell title="修改密码" is-link icon="lock" to="/change-password" />
       <van-cell title="退出登录" is-link icon="close" @click="logout" />

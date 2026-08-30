@@ -6,7 +6,8 @@ from app.core.config import DATABASE_URL, DB_ECHO
 
 engine = create_async_engine(
     DATABASE_URL,
-    pool_pre_ping=True,
+    # 异步 engine 下 pool_pre_ping 会触发 aiomysql 同步桥接 ping → MissingGreenlet 坑,
+    # 用 pool_recycle(1小时自动回收)保证连接不失效,等效防"断线连接"
     pool_recycle=3600,
     echo=DB_ECHO,  # 打印 SQL 日志开关(.env DB_ECHO=1)
 )

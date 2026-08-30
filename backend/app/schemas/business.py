@@ -131,6 +131,22 @@ class SetDefaultIn(CamelModel):
     id: int
 
 
+# ===== 优惠券 =====
+class CouponIn(CamelModel):
+    id: Optional[int] = None
+    name: str
+    type: int  # 1满减 2折扣
+    amount: Decimal  # 满减=减免金额;折扣=折扣率(如8.5=85折)
+    min_amount: Optional[Decimal] = 0  # 使用门槛
+    total: int  # 发放总量(新增时剩余=总量)
+    stock: Optional[int] = None  # 剩余量(编辑时可补货;新增忽略)
+    per_user_limit: Optional[int] = 1  # 每人限领
+    valid_days: Optional[int] = 7  # 有效天数(领取后N天内有效)
+    start_time: str  # 可领开始时间(YYYY-MM-DD HH:mm:ss)
+    end_time: str  # 可领结束时间
+    status: Optional[int] = 1
+
+
 # ===== 客服聊天 =====
 class ChatMessageIn(CamelModel):
     content: str  # 用户端发送消息

@@ -9,6 +9,7 @@ from app.models.orders import Orders, OrderDetail
 from app.models.shop_status import ShopStatus
 from app.models.login_log import EmployeeLoginLog, UserLoginLog
 from app.models.chat_message import ChatMessage
+from app.models.coupon import Coupon, UserCoupon
 
 __all__ = [
     "Employee",
@@ -26,4 +27,6 @@ __all__ = [
     "EmployeeLoginLog",
     "UserLoginLog",
     "ChatMessage",
+    "Coupon",
+    "UserCoupon",
 ]

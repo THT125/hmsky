@@ -328,6 +328,34 @@ check("管理端已读", result_ok(call("POST", f"/admin/chat/read?userId={uid}"
 sess2 = call("GET", "/admin/chat/sessions", None, A)
 check("已读后未读归零", result_ok(sess2) and sess2["data"][0]["unread"] == 0)
 
+# ========== 7.7 抢优惠券(Redis 闸门防超发) ==========
+from datetime import datetime, timedelta
+_ck_begin = (datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+_ck_end = (datetime.now() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+ck = call("POST", "/admin/coupon", {
+    "name": f"测试优惠券{suffix}", "type": 1, "amount": 5, "minAmount": 20, "total": 2,
+    "perUserLimit": 1, "startTime": _ck_begin, "endTime": _ck_end,
+}, A)
+check("新增优惠券", result_ok(ck), json.dumps(ck, ensure_ascii=False))
+ck_id = ck["data"]["id"]
+ck_list = call("GET", "/user/coupon/list", None, U)
+ck_rec = next((x for x in ck_list["data"] if x["id"] == ck_id), None)
+check("领券中心显示可领", ck_rec is not None and ck_rec["grabStatus"] == "available" and ck_rec["stock"] == 2,
+      json.dumps(ck_list["data"][:1], ensure_ascii=False))
+check("抢券成功", result_ok(call("POST", f"/user/coupon/grab/{ck_id}", None, U)))
+ck_list2 = call("GET", "/user/coupon/list", None, U)
+ck_rec2 = next((x for x in ck_list2["data"] if x["id"] == ck_id), None)
+check("抢后剩余1", ck_rec2 is not None and ck_rec2["stock"] == 1, json.dumps(ck_list2["data"][:1], ensure_ascii=False))
+my_ck = call("GET", "/user/coupon/my?status=0", None, U)
+check("我的券1张", result_ok(my_ck) and len(my_ck["data"]) >= 1, json.dumps(my_ck["data"][:1], ensure_ascii=False))
+check("重复抢被拒(已领取)", call("POST", f"/user/coupon/grab/{ck_id}", None, U).get("code") == 0)
+ck_del = call("DELETE", f"/admin/coupon?ids={ck_id}", None, A)
+check("有领取记录禁止删除", ck_del.get("code") == 0, json.dumps(ck_del, ensure_ascii=False))
+ck_page = call("GET", f"/admin/coupon/page?page=1&pageSize=10&name={urllib.parse.quote(f'测试优惠券{suffix}')}", None, A)
+check("管理端分页含新券", result_ok(ck_page) and ck_page["data"]["total"] >= 1)
+ck_st = call("POST", f"/admin/coupon/status/0?id={ck_id}", None, A)
+check("下架优惠券", result_ok(ck_st))
+
 # ========== 8. 工作台 & 报表 ==========
 biz = call("GET", "/admin/workspace/businessData", None, A)
 check("工作台今日数据", result_ok(biz) and biz["data"]["validOrderCount"] >= 1, json.dumps(biz["data"], ensure_ascii=False))

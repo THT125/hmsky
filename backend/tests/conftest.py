@@ -55,3 +55,15 @@ async def _no_redis_writes(monkeypatch):
     async def _noop_deduct(*args, **kwargs):
         return 0
     monkeypatch.setattr("app.services.order_service.redis_stock_deduct", _noop_deduct)
+    monkeypatch.setattr("app.services.order_service.redis_incrby", _noop)
+    # coupon_service 同:限领标记返回 True(放行),Lua 返回 0(跳过,MySQL 兜底),读库存 None(用 DB 值)
+    async def _noop_setnx(*args, **kwargs):
+        return True
+    monkeypatch.setattr("app.services.coupon_service.redis_setnx", _noop_setnx)
+    monkeypatch.setattr("app.services.coupon_service.redis_stock_deduct", _noop_deduct)
+    monkeypatch.setattr("app.services.coupon_service.redis_delete", _noop)
+    monkeypatch.setattr("app.services.coupon_service.redis_setex", _noop)
+    monkeypatch.setattr("app.services.coupon_service.redis_incrby", _noop)
+    async def _noop_get(*args, **kwargs):
+        return None
+    monkeypatch.setattr("app.services.coupon_service.redis_get", _noop_get)

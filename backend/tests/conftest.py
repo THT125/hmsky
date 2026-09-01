@@ -67,3 +67,30 @@ async def _no_redis_writes(monkeypatch):
     async def _noop_get(*args, **kwargs):
         return None
     monkeypatch.setattr("app.services.coupon_service.redis_get", _noop_get)
+    # sign_service:位图操作打桩(默认未签到)
+    async def _noop_zero(*args, **kwargs):
+        return 0
+    monkeypatch.setattr("app.services.sign_service.redis_getbit", _noop_zero)
+    monkeypatch.setattr("app.services.sign_service.redis_setbit", _noop)
+    monkeypatch.setattr("app.services.sign_service.redis_bitcount", _noop)
+    monkeypatch.setattr("app.services.sign_service.redis_expire", _noop)
+    monkeypatch.setattr("app.services.sign_service.redis_bitfield_unsigned", _noop_zero)
+    async def _noop_exists(*args, **kwargs):
+        return True  # 默认 key 已存在(不设 TTL)
+    monkeypatch.setattr("app.services.sign_service.redis_exists", _noop_exists)
+    # hot_service/order_service/dish/setmeal:ZSet 打桩(默认榜单空→走回填)
+    async def _noop_empty(*args, **kwargs):
+        return []
+    monkeypatch.setattr("app.services.hot_service.redis_zrevrange_withscores", _noop_empty)
+    monkeypatch.setattr("app.services.hot_service.redis_zadd", _noop)
+    # 分布式锁:默认抢到锁,释放 noop
+    async def _noop_lock(*args, **kwargs):
+        return True
+    monkeypatch.setattr("app.services.hot_service.redis_setnx", _noop_lock)
+    monkeypatch.setattr("app.services.hot_service.redis_release_lock", _noop)
+    monkeypatch.setattr("app.services.order_service.redis_zincrby", _noop)
+    # dish/setmeal 删除路径的 Redis 清理(命名空间内 from-import)
+    monkeypatch.setattr("app.services.dish_service.redis_delete", _noop)
+    monkeypatch.setattr("app.services.dish_service.redis_zrem", _noop)
+    monkeypatch.setattr("app.services.setmeal_service.redis_delete", _noop)
+    monkeypatch.setattr("app.services.setmeal_service.redis_zrem", _noop)

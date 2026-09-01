@@ -10,6 +10,7 @@ from app.core.exceptions import BizException
 logger = logging.getLogger("uvicorn.error")
 from app.core.redis import (
     CACHE_DISHES,
+    HOT_DISHES_KEY,
     STOCK_DISH_PREFIX,
     delete_key,
     hget_json,
@@ -17,6 +18,7 @@ from app.core.redis import (
     redis_delete,
     redis_get,
     redis_set,
+    redis_zrem,
 )
 from app.models import Category, Dish, DishFlavor, SetmealDish
 from app.schemas.business import DishFlavorIn
@@ -77,7 +79,7 @@ async def save(db: AsyncSession, operator_id: int, name: str, category_id: int, 
         db.add(DishFlavor(dish_id=dish.id, name=f.name, value=f.value))
     await db.commit()
     await sync_stock_key(dish.id, dish.stock)
-    await _invalidate_cache()
+    await _invalidate_cache()    #清除旧菜品缓存
     return dish
 
 
@@ -134,8 +136,9 @@ async def delete_by_ids(db: AsyncSession, ids: List[int]):
     for did in ids:
         try:
             await redis_delete(f"{STOCK_DISH_PREFIX}{did}")
+            await redis_zrem(HOT_DISHES_KEY, did)  # 热销榜清理
         except Exception as e:
-            logger.warning("删除菜品库存key降级: %s", e)
+            logger.warning("删除菜品Redis key降级: %s", e)
     await _invalidate_cache()
 
 
@@ -220,7 +223,7 @@ async def list_by_category(db: AsyncSession, category_id: int, only_selling: boo
     return result
 
 
-async def get_flavors(db: AsyncSession, dish_id: int) -> list:
+async def get_flavors(db: AsyncSession, dish_id: int) -> list:    # 菜品口味
     rows = (await db.execute(
         select(DishFlavor).where(DishFlavor.dish_id == dish_id)
     )).scalars().all()

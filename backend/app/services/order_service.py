@@ -12,10 +12,13 @@ from app.core.exceptions import BizException, OrderStateException
 
 logger = logging.getLogger("uvicorn.error")
 from app.core.redis import (
+    HOT_DISHES_KEY,
+    HOT_SETMEALS_KEY,
     STOCK_DISH_PREFIX,
     STOCK_SETMEAL_PREFIX,
     redis_incrby,
     redis_stock_deduct,
+    redis_zincrby,
 )
 from app.models import AddressBook, Category, Dish, OrderDetail, Orders, Setmeal, ShoppingCart
 from app.schemas.business import OrdersSubmitIn
@@ -33,6 +36,21 @@ async def _redis_incr_stock(key: str, n: int):
         await redis_incrby(key, n)
     except Exception as e:
         logger.warning("Redis库存回补降级(MySQL为权威,展示可能短暂滞后): %s", e)
+
+
+async def _update_hot_sales(db: AsyncSession, order: Orders, delta: int):
+    """热销榜销量:支付成功 +delta,已支付退款 -delta(MySQL 权威,Redis 加速,失败降级)"""
+    details = list((await db.execute(
+        select(OrderDetail).where(OrderDetail.order_id == order.id)
+    )).scalars().all())
+    for d in details:
+        try:
+            if d.dish_id is not None:
+                await redis_zincrby(HOT_DISHES_KEY, delta * d.number, d.dish_id)
+            elif d.setmeal_id is not None:
+                await redis_zincrby(HOT_SETMEALS_KEY, delta * d.number, d.setmeal_id)
+        except Exception as e:
+            logger.warning("热销榜销量更新降级: %s", e)
 
 
 async def _deduct_stock(db: AsyncSession, cart_list: list) -> None:
@@ -237,6 +255,7 @@ async def payment(db: AsyncSession, user_id: int, order_number: str):
         raise OrderStateException("订单不存在")
     OrderStateMachine(order).pay()
     await db.commit()
+    await _update_hot_sales(db, order, 1)  # 支付成功:热销榜销量 +N
     # WebSocket 推送新单提醒给管理端(type=1)
     await push_order_message(1, order.id, f"订单号: {order.number}")
 
@@ -317,8 +336,11 @@ async def repeat_order(db: AsyncSession, user_id: int, order_id: int):
 
 async def user_cancel(db: AsyncSession, user_id: int, order_id: int):
     order = await get_user_order_detail(db, user_id, order_id)
+    was_paid = order.pay_status == 1  # 状态机前记录,流转后会改成 REFUND
     OrderStateMachine(order).user_cancel()
     await _restore_stock(db, order)  # 取消回补库存(幂等)
+    if was_paid:
+        await _update_hot_sales(db, order, -1)  # 已支付退款:热销榜销量 -N
     await db.commit()
 
 
@@ -391,16 +413,22 @@ async def confirm(db: AsyncSession, order_id: int):
 
 async def rejection(db: AsyncSession, order_id: int, reason: str):
     order = await get_order_by_id(db, order_id)
+    was_paid = order.pay_status == 1  # 状态机前记录,流转后会改成 REFUND
     OrderStateMachine(order).admin_cancel(reason, is_rejection=True)
     await _restore_stock(db, order)  # 拒单回补库存(幂等)
+    if was_paid:
+        await _update_hot_sales(db, order, -1)  # 已支付拒单:热销榜销量 -N
     await db.commit()
     await _push_status_change(order, "已取消")
 
 
 async def admin_cancel(db: AsyncSession, order_id: int, reason: str):
     order = await get_order_by_id(db, order_id)
+    was_paid = order.pay_status == 1  # 状态机前记录,流转后会改成 REFUND
     OrderStateMachine(order).admin_cancel(reason, is_rejection=False)
     await _restore_stock(db, order)  # 取消回补库存(幂等)
+    if was_paid:
+        await _update_hot_sales(db, order, -1)  # 已支付取消:热销榜销量 -N
     await db.commit()
     await _push_status_change(order, "已取消")
 

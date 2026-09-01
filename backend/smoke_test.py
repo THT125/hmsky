@@ -356,6 +356,24 @@ check("管理端分页含新券", result_ok(ck_page) and ck_page["data"]["total"
 ck_st = call("POST", f"/admin/coupon/status/0?id={ck_id}", None, A)
 check("下架优惠券", result_ok(ck_st))
 
+# ========== 7.8 每日签到(Bitmap 签到有礼) ==========
+sg = call("POST", "/user/sign", None, U)
+check("签到成功", result_ok(sg) and sg["data"]["signedToday"] and sg["data"]["consecutiveDays"] >= 1,
+      json.dumps(sg, ensure_ascii=False))
+sg2 = call("POST", "/user/sign", None, U)
+check("重复签到被拒", sg2.get("code") == 0, json.dumps(sg2, ensure_ascii=False))
+sg_st = call("GET", "/user/sign/status", None, U)
+check("签到状态(今日已签)", result_ok(sg_st) and sg_st["data"]["signedToday"]
+      and sg_st["data"]["monthDays"][-1] == 1, json.dumps(sg_st["data"], ensure_ascii=False))
+
+# ========== 7.9 热销排行榜(ZSet 实时销量) ==========
+hot_list = call("GET", "/user/hot/list?type=1&top=10", None, U)
+check("热销榜接口", result_ok(hot_list), json.dumps(hot_list["data"][:2], ensure_ascii=False))
+# 支付过的订单(前面流程)应让测试菜品进入榜单
+hot_dish = next((x for x in (hot_list["data"] or []) if x["id"] == dish_id), None)
+check("测试菜品进热销榜", hot_dish is not None and hot_dish["sold"] >= 1,
+      json.dumps(hot_list["data"][:3], ensure_ascii=False))
+
 # ========== 8. 工作台 & 报表 ==========
 biz = call("GET", "/admin/workspace/businessData", None, A)
 check("工作台今日数据", result_ok(biz) and biz["data"]["validOrderCount"] >= 1, json.dumps(biz["data"], ensure_ascii=False))

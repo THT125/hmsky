@@ -11,6 +11,7 @@ from app.core.exceptions import BizException
 logger = logging.getLogger("uvicorn.error")
 from app.core.redis import (
     CACHE_SETMEALS,
+    HOT_SETMEALS_KEY,
     STOCK_SETMEAL_PREFIX,
     delete_key,
     hget_json,
@@ -18,6 +19,7 @@ from app.core.redis import (
     redis_delete,
     redis_get,
     redis_set,
+    redis_zrem,
 )
 from app.models import Category, Dish, Setmeal, SetmealDish
 from app.schemas.business import SetmealDishIn
@@ -133,11 +135,12 @@ async def delete_by_ids(db: AsyncSession, ids: List[int]):
     await db.execute(delete(SetmealDish).where(SetmealDish.setmeal_id.in_(not_selling)))
     await db.execute(delete(Setmeal).where(Setmeal.id.in_(not_selling)))
     await db.commit()
-    for sid in not_selling:
+    for setmeald in not_selling:
         try:
-            await redis_delete(f"{STOCK_SETMEAL_PREFIX}{sid}")
+            await redis_delete(f"{STOCK_SETMEAL_PREFIX}{setmeald}")
+            await redis_zrem(HOT_SETMEALS_KEY, setmeald)  # 热销榜清理
         except Exception as e:
-            logger.warning("删除套餐库存key降级: %s", e)
+            logger.warning("删除套餐Redis key降级: %s", e)
     await _invalidate_cache()
 
 

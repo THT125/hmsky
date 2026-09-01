@@ -22,10 +22,12 @@ from app.routers.user import (
     common as user_common,
     coupon as user_coupon,
     dish as user_dish,
+    hot as user_hot,
     order as user_order,
     setmeal as user_setmeal,
     shop as user_shop,
     shopping_cart as user_cart,
+    sign as user_sign,
     user as user_user,
 )
 
@@ -58,3 +60,5 @@ api_router.include_router(user_address.router)
 api_router.include_router(user_order.router)
 api_router.include_router(user_chat.router)
 api_router.include_router(user_coupon.router)
+api_router.include_router(user_sign.router)
+api_router.include_router(user_hot.router)

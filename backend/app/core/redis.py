@@ -22,6 +22,9 @@ STOCK_SETMEAL_PREFIX = "stock:setmeal:"
 # 优惠券 key 前缀:coupon:stock:{id}(存量,TTL=活动剩余) / coupon:user:{couponId}:{userId}(限领标记)
 COUPON_STOCK_PREFIX = "coupon:stock:"
 COUPON_USER_PREFIX = "coupon:user:"
+# 热销排行榜 ZSet:hot:dishes(菜品) / hot:setmeals(套餐),member=商品id,score=销量
+HOT_DISHES_KEY = "hot:dishes"
+HOT_SETMEALS_KEY = "hot:setmeals"
 
 _pool: Optional[aioredis.ConnectionPool] = None
 
@@ -79,6 +82,12 @@ async def redis_setex(key: str, ttl_seconds: int, value: str):
     await r.setex(key, ttl_seconds, value)
 
 
+async def redis_expire(key: str, ttl_seconds: int):
+    """只设置过期时间,不改变 key 的值(位图/计数等结构设 TTL 必须用 EXPIRE,不能用 SETEX 会覆盖值)"""
+    r = get_redis()
+    await r.expire(key, ttl_seconds)
+
+
 async def redis_get(key: str) -> Optional[str]:
     """读取 KV,不存在返回 None"""
     r = get_redis()
@@ -106,11 +115,107 @@ async def redis_delete(key: str):
     await r.delete(key)
 
 
+async def redis_exists(key: str) -> bool:
+    """判断 key 是否存在"""
+    r = get_redis()
+    key=await r.exists(key)
+    return bool(key)
+
+
 async def redis_setnx(key: str, value: str, ttl_seconds: int) -> bool:
     """SETNX + TTL:key 不存在时写入并设过期时间,返回是否写入成功(一人限领/幂等标记)"""
     r = get_redis()
     ok = await r.set(key, value, nx=True, ex=ttl_seconds)
     return bool(ok)
+
+
+# ===== Bitmap 位图(签到等) =====
+# 设计 key：`sign:uid:{user_id}:202608`，offset = 当月几号‑1
+
+# - 8 月 1 号签到 → offset=0
+# - 8 月 2 号签到 → offset=1
+# 8月5号签到（第5天 offset=4）
+# await redis_setbit("sign:uid:123:202608", offset=4, value=1)
+
+# # 查询8月5号有没有签到
+# res = await r.getbit("sign:uid:123:202608", 4)
+# # res ==1 已签到；res==0未签到
+
+# # 统计8月一共签到多少天
+# sign_days = await r.bitcount("sign:uid:123:202608")
+
+
+
+async def redis_setbit(key: str, offset: int, value: int):
+    """位图:设置某一位(1签到 0未签)"""
+    r = get_redis()
+    await r.setbit(key, offset, value)
+     #key ：sign:1:202608  29      get就可以知道28号是否签到 0/1
+
+async def redis_getbit(key: str, offset: int) -> int:
+    """位图:读取某一位(0/1)是否签到"""
+    r = get_redis()
+    return await r.getbit(key, offset)
+
+
+async def redis_bitcount(key: str) -> int:
+    """位图:统计置 1 的位数(本月签到总天数)"""
+    r = get_redis()
+    return await r.bitcount(key)
+
+
+async def redis_bitfield_unsigned(key: str, bits: int, offset: int = 0) -> int:
+    """位图:一次取整段位(如 u31 取本月 31 天),返回整数,最低位=offset 位。
+    用 execute_command 发原始 BITFIELD,规避 redis-py 版本 API 差异。
+    """
+    r = get_redis()
+    result = await r.execute_command("BITFIELD", key, "GET", f"u{bits}", offset)
+    return (result[0] or 0) if result else 0
+
+
+# ===== ZSet 有序集合(排行榜等) =====
+
+async def redis_zadd(key: str, mapping: dict):
+    """ZSet 批量写入(member → score),回填排行榜用"""
+    r = get_redis()
+    await r.zadd(key, mapping)
+
+
+async def redis_zincrby(key: str, amount: int, member):
+    """ZSet 原子增减 score(销量 +N / -N)"""    #单商品销量
+    r = get_redis()
+    await r.zincrby(key, amount, member)
+
+
+async def redis_zrevrange_withscores(key: str, start: int, stop: int) -> list:
+    """ZSet 按 score 倒序取区间(排行榜 TOP N),返回 [(member, score), ...]"""   #返回排行榜上的前N 个商品
+    r = get_redis()
+    return await r.zrevrange(key, start, stop, withscores=True)
+
+
+async def redis_zrem(key: str, member):
+    """ZSet 移除成员(商品删除时清理)"""     #删除排行榜上相对应的商品
+    r = get_redis()
+    await r.zrem(key, member)
+
+
+# 释放分布式锁 Lua:校验 value 是自己的锁才删除(防误删他人刚抢到的锁)
+_UNLOCK_LUA = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+else
+    return 0
+end
+"""
+
+
+async def redis_release_lock(key: str, lock_id: str):
+    """安全释放分布式锁(校验 value 后再删,原子)"""
+    r = get_redis()
+    try:
+        await r.eval(_UNLOCK_LUA, 1, key, lock_id)
+    except Exception as e:
+        logger.warning("释放分布式锁降级: %s", e)
 
 
 async def redis_incrby(key: str, amount: int) -> int:

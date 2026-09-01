@@ -89,6 +89,11 @@ async def _no_redis_writes(monkeypatch):
     monkeypatch.setattr("app.services.hot_service.redis_setnx", _noop_lock)
     monkeypatch.setattr("app.services.hot_service.redis_release_lock", _noop)
     monkeypatch.setattr("app.services.order_service.redis_zincrby", _noop)
+    # 下单防重锁:默认拿到锁,释放 noop
+    async def _noop_order_lock(*args, **kwargs):
+        return True
+    monkeypatch.setattr("app.services.order_service.redis_setnx", _noop_order_lock)
+    monkeypatch.setattr("app.services.order_service.redis_release_lock", _noop)
     # dish/setmeal 删除路径的 Redis 清理(命名空间内 from-import)
     monkeypatch.setattr("app.services.dish_service.redis_delete", _noop)
     monkeypatch.setattr("app.services.dish_service.redis_zrem", _noop)

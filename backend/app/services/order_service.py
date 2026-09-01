@@ -1,6 +1,7 @@
 """订单业务(规则与原 OrderServiceImpl + OrderMapper 一致)"""
 import logging
 import random
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -17,6 +18,8 @@ from app.core.redis import (
     STOCK_DISH_PREFIX,
     STOCK_SETMEAL_PREFIX,
     redis_incrby,
+    redis_release_lock,
+    redis_setnx,
     redis_stock_deduct,
     redis_zincrby,
 )
@@ -28,6 +31,7 @@ from app.utils.baidu_distance import get_distance
 from app.websocket.ws import push_order_message
 
 DELIVERY_FEE = 6  # 固定配送费
+ORDER_LOCK_TTL = 5  # 下单防重锁超时(秒):下单流程远小于 5s,崩溃自动释放
 
 
 async def _redis_incr_stock(key: str, n: int):
@@ -136,6 +140,25 @@ def _create_order_number(user_id: int) -> str:
 
 
 async def submit(db: AsyncSession, user_id: int, dto: OrdersSubmitIn) -> dict:
+    # 0. 防重复提交:同用户并发下单串行化(锁粒度按用户;Redis 异常降级放行)
+    lock_key, lock_id = f"lock:order:{user_id}", uuid.uuid4().hex
+    locked = False
+    try:
+        try:
+            locked = await redis_setnx(lock_key, lock_id, ORDER_LOCK_TTL)
+        except Exception as e:
+            logger.warning("下单防重锁降级(放行,Redis不可用): %s", e)
+            locked = True  # 降级放行:不阻塞业务
+        if not locked:
+            raise BizException("操作过于频繁,请勿重复提交")
+
+        return await _do_submit(db, user_id, dto)
+    finally:
+        if locked:
+            await redis_release_lock(lock_key, lock_id)
+
+
+async def _do_submit(db: AsyncSession, user_id: int, dto: OrdersSubmitIn) -> dict:
     # 1. 校验地址
     address = (
         await db.execute(

@@ -99,7 +99,7 @@ async def sign(db: AsyncSession, user_id: int) -> dict:
     if await redis_getbit(key, day_index):
         raise BizException("今日已签到")
 
-    first_sign = not await redis·_exists(key)  # 首次创建才设 TTL,后续签到不续命(防止活跃用户 key 永不清理)
+    first_sign = not await redis_exists(key)  # 首次创建才设 TTL,后续签到不续命(防止活跃用户 key 永不清理)
     await redis_setbit(key, day_index, 1)
     if first_sign:
         try:

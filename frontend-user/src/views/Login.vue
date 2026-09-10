@@ -2,7 +2,7 @@
   <div style="min-height:100vh;background:#f7f8fa;padding:60px 24px">
     <div style="text-align:center;margin-bottom:40px">
       <van-icon name="shop-o" size="56" color="#ee0a24" />
-      <h2 style="margin:12px 0 4px">苍穹外卖</h2>
+      <h2 style="margin:12px 0 4px">你饿了吗</h2>
       <div style="color:#999;font-size:13px">欢迎回来，请登录</div>
     </div>
     <van-form @submit="login">

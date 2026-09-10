@@ -1,8 +1,8 @@
-# 苍穹外卖重构版 — 一键启动脚本
+# 你饿了吗 — 一键启动脚本
 # 使用方式: powershell -File start_all.ps1
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "    苍穹外卖 (FastAPI + Vue3 + MySQL)" -ForegroundColor Cyan
+Write-Host "    你饿了吗 (FastAPI + Vue3 + MySQL)" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
 $py = "D:\anaconda\envs\sky-take-out-master-cg\python.exe"

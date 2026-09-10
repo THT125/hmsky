@@ -1,0 +1,87 @@
+# 一键部署
+# 启动: docker compose up -d --build
+# 访问: 用户端 http://localhost:80   管理端 http://localhost:81
+# 配置: 复制本文件同目录 .env(或改 environment)设置强密钥
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sky-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_DATABASE: sky-take-out-master-cg
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql          # 数据持久化
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro   # 首次启动自动建库+种子
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_PASSWORD:-123456}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: sky-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-123456}
+    volumes:
+      - redis_data:/data                   # AOF 持久化
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-123456}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: sky-backend
+    environment:
+      # 服务
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8000
+      # 数据库(指向 compose 内的 mysql)
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-123456}
+      DB_NAME: sky-take-out-master-cg
+      DB_ECHO: "0"
+      # Redis(指向 compose 内的 redis)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-123456}
+      # JWT(生产必须替换为强随机密钥: python -c "import secrets; print(secrets.token_hex(32))")
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-change_me_in_production}
+      USER_SECRET_KEY: ${USER_SECRET_KEY:-change_me_in_production}
+      # 安全
+      CAPTCHA_ENABLED: "1"
+      LOGIN_FAIL_MAX: "5"
+      LOGIN_FAIL_LOCK_MINUTES: "10"
+    volumes:
+      - ./backend/static:/app/static       # 本地上传文件持久化
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: sky-nginx
+    ports:
+      - "80:80"       # 用户端
+      - "81:81"       # 管理端
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:

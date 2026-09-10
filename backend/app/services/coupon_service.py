@@ -141,9 +141,9 @@ async def delete_by_ids(db: AsyncSession, ids: List[int]):
     from sqlalchemy import delete as sql_delete
     await db.execute(sql_delete(Coupon).where(Coupon.id.in_(ids)))
     await db.commit()
-    for cid in ids:
+    for coupon_id in ids:
         try:
-            await redis_delete(f"{COUPON_STOCK_PREFIX}{cid}")
+            await redis_delete(f"{COUPON_STOCK_PREFIX}{coupon_id}")
         except Exception as e:
             logger.warning("删除优惠券Redis key降级: %s", e)
 

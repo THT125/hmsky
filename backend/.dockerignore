@@ -1,0 +1,24 @@
+# 环境配置(含密钥,永不进镜像)
+.env
+.env.*.local
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# 测试与开发产物(镜像不需要)
+tests/
+smoke_test.py
+ws_test*.py
+gen_images.py
+
+# 日志
+*.log
+
+# 本地上传文件(运行时可挂 volume)
+static/uploads/
+
+# 迁移缓存
+alembic/versions/__pycache__/

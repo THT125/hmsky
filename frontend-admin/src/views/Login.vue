@@ -1,7 +1,7 @@
 <template>
   <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)">
     <el-card style="width:400px;padding:20px">
-      <h2 style="text-align:center;margin-bottom:30px">苍穹外卖管理端</h2>
+      <h2 style="text-align:center;margin-bottom:30px">你饿了吗管理端</h2>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="0">
         <el-form-item prop="username">
           <el-input v-model="form.username" placeholder="用户名" prefix-icon="User" size="large" />

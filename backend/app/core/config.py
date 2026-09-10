@@ -66,7 +66,7 @@ LOGIN_FAIL_LOCK_MINUTES = int(_get("LOGIN_FAIL_LOCK_MINUTES", "10"))
 SMS_ENABLED = _get("SMS_ENABLED", "0") == "1"
 SMS_ACCESS_KEY = _get("SMS_ACCESS_KEY")
 SMS_SECRET = _get("SMS_SECRET")
-SMS_SIGN_NAME = _get("SMS_SIGN_NAME", "苍穹外卖")
+SMS_SIGN_NAME = _get("SMS_SIGN_NAME", "你饿了吗")
 
 # ===== 调试 =====
 DB_ECHO = _get("DB_ECHO", "0") == "1"

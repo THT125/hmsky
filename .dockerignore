@@ -1,0 +1,27 @@
+# nginx 构建上下文(项目根)忽略项
+.git
+.gitignore
+*.md
+docs/
+
+# 后端
+backend/.env
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.log
+backend/.pytest_cache/
+backend/static/uploads/
+backend/tests/
+
+# 前端(nginx Dockerfile 中单独 COPY,根上下文不打包 node_modules)
+frontend-admin/node_modules/
+frontend-user/node_modules/
+frontend-admin/dist/
+frontend-user/dist/
+
+# 本机杂项
+dump.rdb
+*.rdb
+start_all.ps1
+.vscode/
+.idea/

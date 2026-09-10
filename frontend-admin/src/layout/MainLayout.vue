@@ -3,7 +3,7 @@
     <!-- 侧边栏 -->
     <el-aside width="220px" style="background:#304156;overflow-y:auto">
       <div style="height:60px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:bold;border-bottom:1px solid #4a5a6a">
-        苍穹外卖管理端
+        你饿了吗管理端
       </div>
       <el-menu
         :default-active="route.path"

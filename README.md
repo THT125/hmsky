@@ -1,6 +1,6 @@
-# 苍穹外卖 — FastAPI + Vue3 + MySQL 重构版  测试
+# 你饿了吗 — FastAPI + Vue3 + MySQL
 
-基于黑马程序员苍穹外卖项目（Spring Boot + MyBatis + Redis）的完整重构，后端采用 **FastAPI** 框架，前端分为 **管理端**（Vue3 + Element Plus）和 **用户端 H5**（Vue3 + Vant 4），数据库使用 **MySQL 8**，缓存使用 **Redis**。
+后端采用 **FastAPI** 框架，前端分为 **管理端**（Vue3 + Element Plus）和 **用户端 H5**（Vue3 + Vant 4），数据库使用 **MySQL 8**，缓存使用 **Redis**。
 
 ---
 

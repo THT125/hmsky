@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     await engine.dispose()  # 关闭数据库连接池
 
 
-app = FastAPI(title="苍穹外卖重构版", lifespan=lifespan)
+app = FastAPI(title="你饿了吗", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

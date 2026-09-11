@@ -87,18 +87,29 @@ python scripts/loadtest.py --scenario coupon --users 500 --stock 100
 
 **结论:缓存必须"写时预热/失效",否则冷启动瞬间会发生击穿。** 生产建议加互斥重建(分布式锁)或逻辑过期。
 
-### 4.2 多 worker 部署的两个坑(尚未修复)
+### 4.2 多 worker 部署的两个坑(已修复 ✅)
 
-压测中尝试 `uvicorn --workers 4`,发现两个**生产阻塞级问题**:
+压测中尝试 `uvicorn --workers 4`,发现两个**生产阻塞级问题**,现已修复:
 
-| 问题 | 原因 | 影响 |
-|------|------|------|
-| **定时任务重复执行** | APScheduler 在每个 worker 进程内各启动一份 | 超时订单取消/自动完成任务被重复触发 |
-| **WebSocket 推送丢失** | 连接管理器 `_sessions` 是**进程内**字典 | 用户连接在 worker A,推送由 worker B 发出 → 收不到消息 |
+| 问题 | 原因 | 修复方案 |
+|------|------|---------|
+| **定时任务重复执行** | APScheduler 在每个 worker 进程内各启动一份 | 任务执行前抢 Redis 分布式锁 `lock:task:{name}`(TTL 略大于执行间隔),同一时刻仅一个 worker 执行;持锁者崩溃后锁自动过期由其他 worker 接管 |
+| **WebSocket 推送丢失** | 连接管理器 `_sessions` 是**进程内**字典 | 改为 **Redis Pub/Sub** 广播:推送发布到 `ws:broadcast` 频道,各 worker 订阅后推给【本进程内】匹配的连接;Redis 不可用时降级为仅推本进程 |
 
-**修复方向**(多副本部署前必须做):
-- 定时任务:加分布式锁(`SETNX lock:task:timeout_cancel`)保证同一时刻只有一个 worker 执行
-- WebSocket:改为 Redis Pub/Sub 广播(各 worker 订阅,收到后推给自己的连接)
+**验证结果:**
+
+```
+4 worker 实测(scripts/verify_ws_multiprocess.py):
+  收到消息数: 3,类型分布: [4, 4, 4]
+  跨进程推送: ✅ 通过(连接与推送可落在不同 worker)
+```
+
+单元测试覆盖(`tests/test_multiworker.py`,8 个用例):
+- 锁被占用时任务跳过 / 抢到锁执行并释放 / Redis 不可用降级执行
+- 连接匹配规则(admin/user 分流 + 按 userId 定向)
+- 推送走 Redis 频道 / Redis 不可用降级本地 / 按用户精准分发
+
+**生产配置**:`backend/Dockerfile` 默认 `--workers 4`(可用 `UVICORN_WORKERS` 覆盖)。
 
 ### 4.3 连接池容量
 
@@ -136,13 +147,13 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 ## 六、后续优化清单
 
-| 优先级 | 项 | 说明 |
-|:---:|----|------|
-| P0 | 多 worker 的定时任务/WS 问题 | 多副本部署前置条件 |
-| P1 | 压测环境分离 | 独立压测机 + wrk/locust,拿真实容量数字 |
-| P1 | 菜单接口 N+1 | `_attach_stock` 逐商品读 Redis,可用 pipeline 批量 |
-| P2 | 缓存击穿互斥重建 | 冷启动/失效瞬间防雪崩 |
-| P2 | `/admin/report` 等聚合接口压测 | 当前未覆盖 |
+| 优先级 | 项 | 说明 | 状态 |
+|:---:|----|------|:---:|
+| P0 | 多 worker 的定时任务/WS 问题 | 多副本部署前置条件 | ✅ 已修复 |
+| P1 | 压测环境分离 | 独立压测机 + wrk/locust,拿真实容量数字 | 待做 |
+| P1 | 菜单接口 N+1 | `_attach_stock` 逐商品读 Redis,可用 pipeline 批量 | 待做 |
+| P2 | 缓存击穿互斥重建 | 冷启动/失效瞬间防雪崩 | 待做 |
+| P2 | `/admin/report` 等聚合接口压测 | 当前未覆盖 | 待做 |
 
 ---
 

@@ -10,15 +10,17 @@ from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
 from app.core.redis import close_redis
 from app.tasks.scheduler import create_scheduler
-from app.websocket.ws import websocket_endpoint
+from app.websocket.ws import websocket_endpoint, ws_manager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler = create_scheduler()
     scheduler.start()
+    ws_manager.start_listener()  # WebSocket 跨进程广播订阅(多 worker 部署必需)
     yield
     scheduler.shutdown(wait=False)
+    await ws_manager.stop_listener()
     await close_redis()  # 优雅关闭 Redis 连接池
     await engine.dispose()  # 关闭数据库连接池
 

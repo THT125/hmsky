@@ -18,5 +18,7 @@ RUN mkdir -p /app/static
 
 EXPOSE 8000
 
-# 启动:先跑数据库迁移,再起服务(healthcheck 就绪后 nginx 才放流量)
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# 启动:先跑数据库迁移,再起服务。
+# 多 worker:定时任务有分布式锁、WebSocket 走 Redis Pub/Sub,已支持多进程部署;
+# 默认 4 worker,可用 UVICORN_WORKERS 环境变量覆盖(按 CPU 核数调整)。
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]

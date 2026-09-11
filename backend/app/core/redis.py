@@ -128,6 +128,12 @@ async def redis_delete(key: str):
     await r.delete(key)
 
 
+async def redis_publish(channel: str, message: str) -> int:
+    """发布消息到频道(WebSocket 跨 worker 广播用),返回接收者数量"""
+    r = get_redis()
+    return await r.publish(channel, message)
+
+
 async def redis_exists(key: str) -> bool:
     """判断 key 是否存在"""
     r = get_redis()

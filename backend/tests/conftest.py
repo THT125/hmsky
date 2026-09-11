@@ -51,6 +51,14 @@ async def _no_redis_writes(monkeypatch):
     monkeypatch.setattr("app.core.redis.redis_set", _noop)
     monkeypatch.setattr("app.core.redis.redis_decrby", _noop)
     monkeypatch.setattr("app.core.redis.redis_incrby", _noop)
+    # WebSocket 跨进程广播(发布到 Redis 频道)打桩,避免测试连真实 Redis
+    monkeypatch.setattr("app.core.redis.redis_publish", _noop)
+    # 定时任务分布式锁打桩:默认抢到锁
+    # (redis_release_lock 不打桩:各调用方在自己命名空间已打桩,
+    #  且 test_hot 需直接验证它的真实 Lua 实现)
+    async def _noop_task_lock(*args, **kwargs):
+        return True
+    monkeypatch.setattr("app.core.redis.redis_setnx", _noop_task_lock)
     # order_service 以 from-import 方式持有引用,需在其命名空间打桩;返回 0=跳过(MySQL 兜底)
     async def _noop_deduct(*args, **kwargs):
         return 0

@@ -11,7 +11,14 @@ logger = logging.getLogger("uvicorn.error")
 
 import redis.asyncio as aioredis
 
-from app.core.config import REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
+from app.core.config import (
+    REDIS_DB,
+    REDIS_HOST,
+    REDIS_MAX_CONNECTIONS,
+    REDIS_PASSWORD,
+    REDIS_PORT,
+    REDIS_SOCKET_TIMEOUT,
+)
 
 # 缓存 key 常量(与原项目一致)
 CACHE_DISHES = "SHOP_CATEGORY_DISHES"
@@ -19,7 +26,11 @@ CACHE_SETMEALS = "SHOP_CATEGORY_SETMEALS"
 # 库存 key 前缀:stock:dish:{id} / stock:setmeal:{id}(string,无TTL;NULL库存不写key)
 STOCK_DISH_PREFIX = "stock:dish:"
 STOCK_SETMEAL_PREFIX = "stock:setmeal:"
-# 优惠券 key 前缀:coupon:stock:{id}(存量,TTL=活动剩余) / coupon:user:{couponId}:{userId}(限领标记)
+# 优惠券 key 前缀:
+#   coupon:info:{id}                   券信息缓存(抢券热路径读,避免每请求查 MySQL)
+#   coupon:stock:{id}                  存量(TTL=活动剩余)
+#   coupon:user:{couponId}:{userId}    限领标记
+COUPON_INFO_PREFIX = "coupon:info:"
 COUPON_STOCK_PREFIX = "coupon:stock:"
 COUPON_USER_PREFIX = "coupon:user:"
 # 热销排行榜 ZSet:hot:dishes(菜品) / hot:setmeals(套餐),member=商品id,score=销量
@@ -38,7 +49,9 @@ def get_redis() -> aioredis.Redis:
             port=REDIS_PORT,
             db=REDIS_DB,
             password=REDIS_PASSWORD,
-            max_connections=20,
+            max_connections=REDIS_MAX_CONNECTIONS,  # 默认 50(压测:20 在高并发下排队)
+            socket_timeout=REDIS_SOCKET_TIMEOUT,     # 防 Redis 卡死拖垮请求
+            socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
             decode_responses=True,
             protocol=2,  # RESP2 兼容旧版 Redis(<6.0)
         )

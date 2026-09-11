@@ -1,4 +1,10 @@
-"""优惠券:券模板 CRUD + 抢券(Redis 当闸门三层防超发,MySQL 只接赢家)"""
+"""优惠券:券模板 CRUD + 抢券(Redis 当闸门三层防超发,MySQL 只接赢家)
+
+热路径设计(压测优化):
+  抢券时券信息从 Redis 读(coupon:info:{id}),避免每个请求(含被拒的)都查 MySQL;
+  MySQL 只在缓存 miss 时回源,以及赢家落库时写入。
+"""
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -10,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizException
 from app.core.redis import (
+    COUPON_INFO_PREFIX,
     COUPON_STOCK_PREFIX,
     COUPON_USER_PREFIX,
     redis_delete,
@@ -69,6 +76,42 @@ async def _redis_incr_stock(key: str, n: int):
         logger.warning("Redis优惠券库存回补降级: %s", e)
 
 
+# ===== 券信息缓存(抢券热路径零 MySQL 查询) =====
+
+async def _cache_coupon_info(coupon: Coupon):
+    """缓存券信息,TTL=活动剩余时间(活动结束自动清理)"""
+    try:
+        ttl = max(int((coupon.end_time - datetime.now()).total_seconds()), 60)
+        await redis_setex(f"{COUPON_INFO_PREFIX}{coupon.id}", ttl,
+                          json.dumps(_coupon_vo(coupon, coupon.stock), ensure_ascii=False, default=str))
+    except Exception as e:
+        logger.warning("缓存券信息降级: %s", e)
+
+
+async def _get_coupon_info(db: AsyncSession, coupon_id: int) -> Optional[dict]:
+    """券信息:Redis 优先(miss 时回源 DB 并回填)。返回 None 表示券不存在。"""
+    try:
+        cached = await redis_get(f"{COUPON_INFO_PREFIX}{coupon_id}")
+        if cached:
+            return json.loads(cached)
+    except Exception as e:
+        logger.warning("读券信息缓存降级(回源DB): %s", e)
+
+    coupon = await db.get(Coupon, coupon_id)
+    if coupon is None:
+        return None
+    await _cache_coupon_info(coupon)
+    return _coupon_vo(coupon, coupon.stock)
+
+
+async def _invalidate_coupon_info(coupon_id: int):
+    """券信息变更时失效缓存(下架/编辑后立即生效)"""
+    try:
+        await redis_delete(f"{COUPON_INFO_PREFIX}{coupon_id}")
+    except Exception as e:
+        logger.warning("失效券信息缓存降级: %s", e)
+
+
 # ===== 管理端:模板 CRUD =====
 
 async def create(db: AsyncSession, operator_id: int, dto) -> Coupon:
@@ -92,6 +135,7 @@ async def create(db: AsyncSession, operator_id: int, dto) -> Coupon:
     db.add(coupon)
     await db.commit()
     await _sync_stock_key(coupon.id, coupon.stock, coupon.end_time)  # 预热存量
+    await _cache_coupon_info(coupon)  # 预热券信息(抢券热路径读)
     return _coupon_vo(coupon, coupon.stock)  # 返回 dict(ORM 不出 service 层,避免异步序列化触发 refresh)
 
 
@@ -117,6 +161,7 @@ async def update(db: AsyncSession, operator_id: int, coupon_id: int, dto) -> Cou
     coupon.update_user = operator_id
     await db.commit()
     await _sync_stock_key(coupon_id, coupon.stock, coupon.end_time)
+    await _cache_coupon_info(coupon)  # 刷新券信息缓存(配置已变更)
     return _coupon_vo(coupon, coupon.stock)
 
 
@@ -129,6 +174,7 @@ async def change_status(db: AsyncSession, operator_id: int, coupon_id: int, stat
     coupon.status = status
     coupon.update_user = operator_id
     await db.commit()
+    await _invalidate_coupon_info(coupon_id)  # 下架/上架立即生效(不能等 TTL)
 
 
 async def delete_by_ids(db: AsyncSession, ids: List[int]):
@@ -144,6 +190,7 @@ async def delete_by_ids(db: AsyncSession, ids: List[int]):
     for coupon_id in ids:
         try:
             await redis_delete(f"{COUPON_STOCK_PREFIX}{coupon_id}")
+            await redis_delete(f"{COUPON_INFO_PREFIX}{coupon_id}")
         except Exception as e:
             logger.warning("删除优惠券Redis key降级: %s", e)
 
@@ -223,22 +270,27 @@ async def list_for_user(db: AsyncSession, user_id: int) -> list:
 
 
 async def grab(db: AsyncSession, user_id: int, coupon_id: int) -> dict:
-    """抢券:三层防超发(限领 SETNX → Lua 原子扣减 → MySQL 唯一约束兜底)"""
+    """抢券:三层防超发(限领 SETNX → Lua 原子扣减 → MySQL 唯一约束兜底)
+
+    性能:① 走 Redis 缓存(热路径零 MySQL 查询),只有赢家落库时才写 MySQL。
+    """
     now = datetime.now()
-    # ① 活动校验(服务端时间,防前端绕过)
-    coupon = await db.get(Coupon, coupon_id)
-    if coupon is None or coupon.status != 1:
+    # ① 活动校验(Redis 缓存优先,miss 才回源 DB;服务端时间,防前端绕过)
+    info = await _get_coupon_info(db, coupon_id)
+    if info is None or info.get("status") != 1:
         raise BizException("优惠券不存在或已停用")
-    if now < coupon.start_time:
+    start_time = datetime.fromisoformat(str(info["startTime"]))
+    end_time = datetime.fromisoformat(str(info["endTime"]))
+    if now < start_time:
         raise BizException("活动未开始")
-    if now > coupon.end_time:
+    if now > end_time:
         raise BizException("活动已结束")
-    if coupon.stock <= 0:
+    if int(info.get("stock") or 0) <= 0:
         raise BizException("手慢了,优惠券已抢完")
 
     # ② 一人限领(SETNX 原子;Redis 异常降级放行,由 DB 唯一约束兜底)
     limit_key = f"{COUPON_USER_PREFIX}{coupon_id}:{user_id}"
-    ttl = max(int((coupon.end_time - now).total_seconds()), 60)
+    ttl = max(int((end_time - now).total_seconds()), 60)
     try:
         claimed = await redis_setnx(limit_key, "1", ttl)
         if not claimed:
@@ -259,7 +311,7 @@ async def grab(db: AsyncSession, user_id: int, coupon_id: int) -> dict:
 
     # ④ 落库(同一事务):插入持有记录(含过期时间=领取时间+有效天数)+ 条件扣库存;唯一约束兜底并发
     try:
-        expire_time = now + timedelta(days=coupon.valid_days)
+        expire_time = now + timedelta(days=int(info.get("validDays") or 30))
         db.add(UserCoupon(user_id=user_id, coupon_id=coupon_id, status=0, expire_time=expire_time))
         r = await db.execute(
             text("UPDATE coupon SET stock = stock - 1 WHERE id = :id AND stock > 0"),
@@ -284,8 +336,13 @@ async def grab(db: AsyncSession, user_id: int, coupon_id: int) -> dict:
             pass
         raise BizException("您已领取过该优惠券")
 
-    coupon.stock -= 1
-    return _coupon_vo(coupon, coupon.stock)
+    # 返回实时库存:
+    # 缓存里的是"活动配置"(时间/限领/有效期),实时存量以 coupon:stock:{id} 为准;
+    # 抢券成功【不失效】信息缓存(否则每次抢中都要回源 DB,热路径优化失效)。
+    # 兜底值 = 缓存存量 - 1(本次已扣减),Redis 命中则以真实存量为准。
+    fallback_stock = max(int(info.get("stock") or 1) - 1, 0)
+    info["stock"] = await _real_stock(coupon_id, fallback_stock, end_time)
+    return info
 
 
 async def my_coupons(db: AsyncSession, user_id: int, status: Optional[int]) -> list:

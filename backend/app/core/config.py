@@ -47,6 +47,16 @@ REDIS_HOST = _get("REDIS_HOST", "localhost")
 REDIS_PORT = int(_get("REDIS_PORT", "6379"))
 REDIS_DB = int(_get("REDIS_DB", "0"))
 REDIS_PASSWORD = _get("REDIS_PASSWORD") or None
+# 连接池大小(压测依据:100 并发下 20 连接会成为瓶颈;按并发量调整)
+REDIS_MAX_CONNECTIONS = int(_get("REDIS_MAX_CONNECTIONS", "50"))
+# 连接/读写超时(秒):防 Redis 卡死拖垮请求
+REDIS_SOCKET_TIMEOUT = float(_get("REDIS_SOCKET_TIMEOUT", "5"))
+
+# ===== 数据库连接池 =====
+# 压测依据:默认 pool_size=5+max_overflow=10 在高并发下排队;按 DB 承受力调整
+DB_POOL_SIZE = int(_get("DB_POOL_SIZE", "20"))
+DB_MAX_OVERFLOW = int(_get("DB_MAX_OVERFLOW", "40"))
+DB_POOL_TIMEOUT = int(_get("DB_POOL_TIMEOUT", "30"))
 
 # ===== 阿里云 OSS =====
 ALIOSS_ACCESS_KEY_ID = _get("ALIOSS_ACCESS_KEY_ID")

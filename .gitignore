@@ -42,7 +42,13 @@ dump.rdb
 
 # ===== 本地运行数据 =====
 # 本地上传/生成的图片(可重新生成: python gen_images.py;上传属运行数据)
-backend/static/
+backend/static/*
+# 例外:菜品演示图是项目资源,必须随代码入库 —— 否则部署到服务器后全是裂图
+# (注意:父目录被忽略时 git 不会往下找,所以上面用 /* 而不是整个目录,这里才能生效)
+!backend/static/demo_images/
+
+# 菜品图原始素材(自行下载的图,体积大,不入库;处理后可删)
+dish-images/
 
 # ===== IDE / 编辑器 =====
 .vscode/

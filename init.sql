@@ -7,6 +7,10 @@
 -- 默认管理员: admin / 123456 (密码为 MD5 存储,登录时自动升级为 bcrypt)
 -- ============================================================
 
+-- 声明本文件内容为 utf8mb4(必须!)
+-- 否则 MySQL 容器初始化时客户端字符集为 latin1,中文会被双重编码成乱码
+SET NAMES utf8mb4;
+
 DROP TABLE IF EXISTS `address_book`;
 CREATE TABLE `address_book` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',

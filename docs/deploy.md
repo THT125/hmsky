@@ -95,6 +95,22 @@ docker compose logs -f backend
 |------|------|
 | 用户端 H5 | `http://<服务器IP>:8080` |
 | 管理端 | `http://<服务器IP>:8081`(admin / 123456,首次登录强制改密) |
+| 健康检查 | `http://<服务器IP>:8080/health` |
+
+### 健康检查 `/health`
+
+```bash
+curl http://localhost:8080/health
+# {"status":"ok","checks":{"database":"ok","redis":"ok"}}
+```
+
+| 返回 | 含义 | 处置 |
+|------|------|------|
+| `200 {"status":"ok"}` | 数据库 + Redis 均正常 | — |
+| `200 {"status":"degraded"}` | **Redis 挂了但服务可用**(自动降级,不影响业务) | 排查 Redis 即可 |
+| `503 {"status":"unhealthy"}` | **数据库不可用**(硬依赖) | 检查 MySQL 容器 |
+
+> Redis 故障**不会**让容器判定为不健康——因为本项目对 Redis 全程降级(缓存直查库、会话放行),这是有意设计。
 
 ---
 
@@ -166,7 +182,65 @@ df -h                            # 磁盘(MySQL 增长快)
 
 ---
 
-## 八、常见问题
+## 八、出问题怎么排查(排障手册)
+
+### 排障顺序(从外到内)
+
+```bash
+# ① 服务活着吗?
+curl -s http://localhost:8080/health          # ok / degraded / unhealthy
+docker compose ps                             # 4 个容器状态(healthy?)
+
+# ② 谁在报错?看日志
+docker compose logs --tail=100 backend        # 后端(含请求日志 + 异常堆栈)
+docker compose logs --tail=100 nginx          # 网关(反代是否正常)
+docker compose logs --tail=100 mysql          # 数据库
+
+# ③ 实时跟踪(边操作边看)
+docker compose logs -f backend
+
+# ④ 进容器内部查
+docker exec -it sky-backend sh
+  python scripts/selfcheck.py                 # 配置/路由/依赖自检
+  python smoke_test.py                        # 全链路业务验证(112 项)
+  exit
+
+# ⑤ 数据库直查
+docker exec -it sky-mysql mysql -uroot -p"$DB_PASSWORD" sky-take-out-master-cg -e "SHOW TABLES;"
+
+# ⑥ Redis 直查
+docker exec -it sky-redis redis-cli -a "$REDIS_PASSWORD" keys "*"
+```
+
+### 请求日志怎么看
+
+后端每个请求都有一行日志(含 **request_id**,可用于串联排查):
+
+```
+INFO:  POST /user/order/submit 200 45.3ms ip=203.0.113.5 rid=91fe7ee9b548
+       方法  路径                状态  耗时   客户端IP      请求ID
+```
+
+- 响应头也带 `X-Request-Id` 与 `X-Process-Time`,前端报错时可对照
+- 日志级别:5xx=ERROR、4xx=WARNING、正常=INFO
+- `/health` 探活请求不记录(避免刷屏)
+
+### 按现象定位
+
+| 现象 | 优先查 | 常见原因 |
+|------|--------|---------|
+| 浏览器打不开(超时) | 安全组是否放行 8080 | 端口没开 |
+| 502 Bad Gateway | `docker compose ps`(backend 是否 healthy) | 后端未就绪/崩溃 |
+| 管理端打不开(用户端正常) | 安全组 8081 是否放行你的 IP | 8081 只对特定 IP 开放 |
+| 页面能开但接口报错 | `logs backend` 看请求日志 | 后端异常/参数问题 |
+| `/health` 返回 degraded | `logs redis` | Redis 挂了(业务仍可用) |
+| `/health` 返回 unhealthy | `logs mysql` | MySQL 挂了 |
+| 容器反复重启 | `docker compose logs backend` 看退出原因 | 内存不足 / 迁移失败 |
+| 数据不对 | 进 mysql 容器直查 | 业务逻辑或数据问题 |
+
+---
+
+## 九、常见问题
 
 | 现象 | 排查 |
 |------|------|
@@ -179,7 +253,7 @@ df -h                            # 磁盘(MySQL 增长快)
 
 ---
 
-## 九、与本地开发的差异
+## 十、与本地开发的差异
 
 | 项 | 本地 | 服务器 |
 |----|------|--------|

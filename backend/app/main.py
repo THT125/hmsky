@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import STATIC_DIR
 from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
+from app.core.middleware import request_logging_middleware
 from app.core.redis import close_redis
 from app.tasks.scheduler import create_scheduler
 from app.websocket.ws import websocket_endpoint, ws_manager
@@ -41,6 +42,9 @@ app.add_middleware(
 )
 
 register_exception_handlers(app)
+
+# 请求日志(最后添加 = 最外层,能记录到所有请求含 CORS 预检)
+app.middleware("http")(request_logging_middleware)
 
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

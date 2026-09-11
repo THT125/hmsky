@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.routers import health
 from app.routers.admin import (
     captcha as admin_captcha,
     category as admin_category,
@@ -32,6 +33,9 @@ from app.routers.user import (
 )
 
 api_router = APIRouter()
+
+# 系统
+api_router.include_router(health.router)
 
 # 管理端
 api_router.include_router(admin_captcha.router)

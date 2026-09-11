@@ -75,6 +75,13 @@ services:
       LOGIN_FAIL_LOCK_MINUTES: "10"
     volumes:
       - ./backend/static:/app/static       # 本地上传文件持久化
+    healthcheck:
+      # 探测 /health(内部检查 MySQL;Redis 异常不算不健康)
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s                    # 首次启动需等 MySQL 就绪 + alembic 迁移
     depends_on:
       mysql:
         condition: service_healthy
@@ -91,7 +98,8 @@ services:
       - "${USER_PORT:-8080}:80"     # 用户端 H5
       - "${ADMIN_PORT:-8081}:81"    # 管理端
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy   # 等后端就绪再放流量,避免启动期 502
     restart: unless-stopped
 
 volumes:

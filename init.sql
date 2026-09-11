@@ -219,6 +219,15 @@ CREATE TABLE `setmeal_dish` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=47 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='套餐菜品关系';
 
+DROP TABLE IF EXISTS `shop_status`;
+CREATE TABLE `shop_status` (
+  `id` tinyint NOT NULL DEFAULT '1',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '1营业 0打烊',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='店铺营业状态';
+
+INSERT INTO `shop_status` VALUES (1,1);
+
 DROP TABLE IF EXISTS `shopping_cart`;
 CREATE TABLE `shopping_cart` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',

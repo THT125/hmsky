@@ -45,6 +45,16 @@ def main() -> int:
         except Exception as e:
             failures.append(f"依赖缺失 {mod}: {e}")
 
+    # 4. 健康检查端点已注册(容器 healthcheck 依赖它)
+    try:
+        from app.main import app
+        if "/health" in app.openapi()["paths"]:
+            print("[OK] /health 端点已注册")
+        else:
+            failures.append("/health 端点未注册")
+    except Exception as e:
+        failures.append(f"/health 检查失败: {e}")
+
     if failures:
         print("\n[FAIL] 自检未通过:")
         for f in failures:

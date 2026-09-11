@@ -13,6 +13,7 @@ httpx
 redis
 hiredis
 bcrypt
+Pillow
 
 # 开发/工程化依赖
 alembic

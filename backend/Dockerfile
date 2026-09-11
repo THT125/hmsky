@@ -8,9 +8,7 @@ ENV TZ=Asia/Shanghai
 
 # 先装依赖(利用层缓存)
 COPY requirements.txt .
-# Pillow 用于图形验证码(captcha.py),requirements.txt 中暂缺,补装
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple \
-    && pip install --no-cache-dir Pillow -i https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制源码(排除 .dockerignore 中的 .env/缓存/日志)
 COPY . .

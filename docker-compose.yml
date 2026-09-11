@@ -1,7 +1,17 @@
 # 一键部署
 # 启动: docker compose up -d --build
-# 访问: 用户端 http://localhost:80   管理端 http://localhost:81
-# 配置: 复制本文件同目录 .env(或改 environment)设置强密钥
+# 访问: 用户端 http://<IP>:8080   管理端 http://<IP>:8081
+#       (非标准端口,避免大陆云服务器 80 端口的备案限制;本地同样适用)
+# 配置: 同目录建 .env 覆盖密钥与端口(下面带 :- 的均为可覆盖项)
+#
+# .env 示例:
+#   USER_PORT=8080
+#   ADMIN_PORT=8081
+#   DB_PASSWORD=强密码
+#   REDIS_PASSWORD=强密码
+#   ADMIN_SECRET_KEY=<64位随机>
+#   USER_SECRET_KEY=<64位随机>
+#   UVICORN_WORKERS=4
 
 services:
   mysql:
@@ -42,6 +52,8 @@ services:
       # 服务
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8000
+      # 进程数(云服务器建议 = CPU 核数;小规格实例设 2)
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
       # 数据库(指向 compose 内的 mysql)
       DB_HOST: mysql
       DB_PORT: 3306
@@ -76,8 +88,8 @@ services:
       dockerfile: nginx/Dockerfile
     container_name: sky-nginx
     ports:
-      - "80:80"       # 用户端
-      - "81:81"       # 管理端
+      - "${USER_PORT:-8080}:80"     # 用户端 H5
+      - "${ADMIN_PORT:-8081}:81"    # 管理端
     depends_on:
       - backend
     restart: unless-stopped

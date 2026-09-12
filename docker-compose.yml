@@ -11,7 +11,7 @@
 #   REDIS_PASSWORD=强密码
 #   ADMIN_SECRET_KEY=<64位随机>
 #   USER_SECRET_KEY=<64位随机>
-#   UVICORN_WORKERS=4
+#   UVICORN_WORKERS=2
 
 services:
   mysql:
@@ -21,7 +21,10 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
       MYSQL_DATABASE: sky-take-out-master-cg
       TZ: Asia/Shanghai
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    # max-connections:MySQL 默认 151,而后端总连接数 = UVICORN_WORKERS × (DB_POOL_SIZE + DB_MAX_OVERFLOW),
+    # 2×60=120 已逼近默认上限(4 workers 时是 240,会直接超限报 Too many connections)。
+    # 放宽到 200 留余量;连接按需分配不预占内存,调大不额外吃资源。
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=200
     volumes:
       - mysql_data:/var/lib/mysql          # 数据持久化
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro   # 首次启动自动建库+种子
@@ -52,8 +55,14 @@ services:
       # 服务
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8000
-      # 进程数(云服务器建议 = CPU 核数;小规格实例设 2)
-      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
+      # 进程数:建议 = CPU 核数。2核实例务必设 2 ——
+      # 每个 worker 有独立连接池,总连接数 = UVICORN_WORKERS × (DB_POOL_SIZE + DB_MAX_OVERFLOW),
+      # 设大了不仅抢 CPU,还会撑破 MySQL 的 max_connections(见 mysql 的 command 注释)
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      # 数据库连接池(每个 worker 一份)。20+40 是压测后调高的值(见 docs/performance.md),
+      # 调小会让抢券热路径重新出现连接排队,非必要别动
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-40}
       # 数据库(指向 compose 内的 mysql)
       DB_HOST: mysql
       DB_PORT: 3306

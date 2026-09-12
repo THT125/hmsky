@@ -5,12 +5,13 @@ import pytest
 from sqlalchemy import select
 
 from app.core.exceptions import BizException
-from app.models import AddressBook, Category, Dish, Orders, ShopStatus, ShoppingCart
+from app.models import AddressBook, Category, Dish, Orders, ShopStatus, ShoppingCart, User
 from app.schemas.business import OrdersSubmitIn
 from app.services import cart_service, order_service
 
 
 async def _seed(db):
+    db.add(User(id=1, username="order_user", phone="13900000001", status=1))  # 下单链路校验账号状态
     db.add(Category(id=1, type=1, name="菜品分类", sort=1, status=1))
     db.add(Dish(id=1, name="测试菜", category_id=1, price=29.90, status=1))
     db.add(AddressBook(id=1, user_id=1, consignee="张三", phone="13911112222", detail="测试路1号", is_default=1))

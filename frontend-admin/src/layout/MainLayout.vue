@@ -15,6 +15,7 @@
       >
         <el-menu-item index="/dashboard"><el-icon><Monitor /></el-icon>工作台</el-menu-item>
         <el-menu-item index="/employee"><el-icon><User /></el-icon>员工管理</el-menu-item>
+        <el-menu-item index="/users"><el-icon><UserFilled /></el-icon>用户管理</el-menu-item>
         <el-menu-item index="/category"><el-icon><Grid /></el-icon>分类管理</el-menu-item>
         <el-menu-item index="/dish"><el-icon><DishDot /></el-icon>菜品管理</el-menu-item>
         <el-menu-item index="/setmeal"><el-icon><Collection /></el-icon>套餐管理</el-menu-item>

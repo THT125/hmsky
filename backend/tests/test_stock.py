@@ -3,13 +3,18 @@ import pytest
 from sqlalchemy import select
 
 from app.core.exceptions import BizException
-from app.models import AddressBook, Category, Dish, OrderDetail, Orders, Setmeal, ShopStatus, ShoppingCart
+from app.models import (AddressBook, Category, Dish, OrderDetail, Orders, Setmeal, ShopStatus,
+                        ShoppingCart, User)
 from app.schemas.business import OrdersSubmitIn
 from app.services import cart_service, order_service
 
 
 async def _seed(db, dish_stock=None, setmeal_stock=None):
-    """种子:菜品分类/套餐分类 + 限量或不限量的菜品/套餐 + 地址 + 店铺营业"""
+    """种子:用户 + 菜品分类/套餐分类 + 限量或不限量的菜品/套餐 + 地址 + 店铺营业
+
+    用户是必需的:下单链路会校验账号状态(封禁拦截)。
+    """
+    db.add(User(id=1, username="order_user", phone="13900000001", status=1))
     db.add(Category(id=1, type=1, name="菜品分类", sort=1, status=1))
     db.add(Category(id=2, type=2, name="套餐分类", sort=1, status=1))
     db.add(Dish(id=1, name="测试菜", category_id=1, price=29.90, status=1, stock=dish_stock))

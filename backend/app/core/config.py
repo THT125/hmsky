@@ -87,3 +87,6 @@ SERVER_PORT = int(_get("SERVER_PORT", "8000"))
 
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATE_DIR = BASE_DIR / "templates"
+# 离线 IP 归属地库(ip2region xdb,约 10MB;文件缺失时归属地功能自动降级,不影响主流程)
+DATA_DIR = BASE_DIR / "data"
+IP2REGION_XDB = _get("IP2REGION_XDB", str(DATA_DIR / "ip2region_v4.xdb"))

@@ -6,6 +6,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta
 
 BASE = "http://127.0.0.1:8000"
 suffix = str(random.randint(1000, 9999))
@@ -455,6 +456,77 @@ check("非法文件类型被拒", up2.get("code") == 0, json.dumps(up2, ensure_a
 # ========== 10. 无token访问 ==========
 check("无token访问受保护接口", call("GET", "/admin/category/list", None).get("code") == 0)
 check("无token访问用户端订单", call("GET", "/user/order/historyOrders?page=1&pageSize=5", None).get("code") == 0)
+
+# ========== 11. 用户管理(管理端:查询/详情/封禁链路/日志/风控/导出/发券) ==========
+uid = user_reg["data"]["id"]
+uname = f"smokeuser{suffix}"
+
+upage = call("GET", "/admin/user/page?page=1&pageSize=10", None, A)
+check("用户分页", result_ok(upage) and upage["data"]["total"] >= 1)
+urecs = upage["data"]["records"]
+check("用户分页不泄露password", bool(urecs) and all("password" not in r for r in urecs))
+check("用户分页含累计消费", bool(urecs) and all("totalSpend" in r for r in urecs))
+
+udetail = call("GET", f"/admin/user/{uid}", None, A)
+check("用户详情", result_ok(udetail) and udetail["data"]["username"] == uname)
+check("用户详情不泄露password", "password" not in udetail["data"])
+check("用户详情含统计", "orderCount" in udetail["data"] and "totalSpend" in udetail["data"])
+check("用户详情含归属地字段", "lastLoginRegion" in udetail["data"])
+
+ulogs = call("GET", f"/admin/user/{uid}/loginLogs?page=1&pageSize=10", None, A)
+check("用户登录日志", result_ok(ulogs) and ulogs["data"]["total"] >= 1)
+# 归属地:冒烟测试从 127.0.0.1 发起,离线库应识别为保留地址(数据文件缺失时会返回 None)
+ulog0 = (ulogs["data"]["records"] or [{}])[0]
+check("登录日志含归属地", "region" in ulog0)
+check("内网IP识别为保留地址", ulog0.get("region") == "内网/保留地址",
+      json.dumps(ulog0, ensure_ascii=False))
+
+# --- 封禁:立即禁止登录 ---
+# 封禁原因含中文,必须 URL 编码(urllib 按 ASCII 拼请求行;前端 axios 会自动编码)
+reason_q = urllib.parse.quote("smoke封禁测试")
+check("封禁用户", result_ok(call("POST", f"/admin/user/status/0?id={uid}&reason={reason_q}", None, A)))
+uc1 = call("GET", "/user/captcha")
+banned = call("POST", "/user/user/login", {
+    "username": uname, "password": "newpass123",
+    "captchaUuid": uc1["data"]["uuid"], "captchaCode": uc1["data"].get("code", ""),
+})
+check("封禁后无法登录", banned.get("code") == 0 and "封禁" in (banned.get("msg") or ""), json.dumps(banned, ensure_ascii=False))
+
+# --- 解封:恢复登录 ---
+check("解封用户", result_ok(call("POST", f"/admin/user/status/1?id={uid}", None, A)))
+uc2 = call("GET", "/user/captcha")
+relogin2 = call("POST", "/user/user/login", {
+    "username": uname, "password": "newpass123",
+    "captchaUuid": uc2["data"]["uuid"], "captchaCode": uc2["data"].get("code", ""),
+})
+check("解封后可登录", result_ok(relogin2))
+
+# --- 风控列表(接口可用即可,异常数据需造登录日志,不在此构造) ---
+risk = call("GET", "/admin/user/risk", None, A)
+check("风险用户列表", result_ok(risk) and isinstance(risk["data"], list))
+
+# --- 导出(二进制 xlsx,zlsx 头为 PK) ---
+uxlsx = call("GET", "/admin/user/export", None, A, raw=True)
+check("用户列表导出Excel", len(uxlsx) > 1000 and uxlsx[:2] == b"PK", f"len={len(uxlsx)}")
+
+# --- 批量发券:库存扣减 + 重复发放被拒 ---
+_now = datetime.now()
+call("POST", "/admin/coupon", {
+    "name": f"发券测试券{suffix}", "type": 1, "amount": 5, "minAmount": 0,
+    "total": 10, "perUserLimit": 1, "validDays": 7,
+    "startTime": _now.strftime("%Y-%m-%d %H:%M:%S"),
+    "endTime": (_now + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S"),
+}, A)
+cpage = call("GET", "/admin/coupon/page?page=1&pageSize=100", None, A)
+cid = next((r["id"] for r in cpage["data"]["records"] if r["name"] == f"发券测试券{suffix}"), None)
+check("准备发券用券模板", cid is not None)
+
+grant = call("POST", "/admin/user/grantCoupon", {"couponId": cid, "userIds": [uid]}, A)
+check("批量发券", result_ok(grant) and grant["data"]["granted"] == 1, json.dumps(grant, ensure_ascii=False))
+check("发券扣减库存", result_ok(grant) and grant["data"]["stockLeft"] == 9)
+
+grant2 = call("POST", "/admin/user/grantCoupon", {"couponId": cid, "userIds": [uid]}, A)
+check("重复发券被拒(已领取过)", grant2.get("code") == 0, json.dumps(grant2, ensure_ascii=False))
 
 print(f"\n===== 结果: {passed} 通过, {failed} 失败 =====")
 sys.exit(1 if failed else 0)

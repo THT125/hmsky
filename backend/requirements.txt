@@ -14,6 +14,7 @@ redis
 hiredis
 bcrypt
 Pillow
+py-ip2region            # 离线 IP 归属地查询(数据文件在 backend/data/ip2region_v4.xdb)
 
 # 开发/工程化依赖
 alembic

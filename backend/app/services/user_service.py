@@ -1,5 +1,6 @@
 """C端用户注册/登录/资料(账号密码制:用户名+密码+图形验证码)"""
 import logging
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import func, select
@@ -63,7 +64,8 @@ async def register(db: AsyncSession, username: str, password: str, phone: str,
     if (await db.scalar(select(func.count(User.id)).where(User.phone == phone))) > 0:
         raise BizException("该手机号已注册")
 
-    user = User(username=username, password=hash_password(password), phone=phone)
+    user = User(username=username, password=hash_password(password), phone=phone,
+                last_login_time=datetime.now(), last_login_ip=ip or None)
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -89,8 +91,15 @@ async def login(db: AsyncSession, username: str, password: str,
         await record_login_fail(username)
         await _add_login_log(db, user.id, 0, ip, user_agent)
         raise LoginFailedException("密码错误")
+    # 封禁拦截:密码正确也拒绝。记失败日志(便于风控看到有人在试被禁账号)
+    if user.status == 0:
+        await _add_login_log(db, user.id, 0, ip, user_agent)
+        raise LoginFailedException("账号已被封禁")
 
     await clear_login_fail(username)
+    # 回写"最近登录":登录日志表存完整历史(审计),这里冗余存最近一次(详情展示 + 活跃度筛选)
+    user.last_login_time = datetime.now()
+    user.last_login_ip = ip or None
     jti = new_jti()
     await _save_session(user.id, jti)  # 登录写会话(旧会话被顶号)
     await _add_login_log(db, user.id, 1, ip, user_agent)

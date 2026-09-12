@@ -22,3 +22,7 @@ static/uploads/
 
 # 迁移缓存
 alembic/versions/__pycache__/
+
+# ⚠️ 注意:data/ 目录**不要排除**
+# 里面是 ip2region 离线 IP 库(ip2region_v4.xdb,约 10MB),管理端的 IP 归属地功能依赖它。
+# 排除了不会报错,只是归属地全部显示为空(代码里有降级),容易被忽略。

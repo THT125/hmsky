@@ -170,6 +170,13 @@ class OrdersSubmitIn(CamelModel):
     tableware_status: int = 1  # 1按餐量提供 0选择数量
 
 
+# ===== 用户管理(管理端) =====
+class UserGrantCouponIn(CamelModel):
+    """批量发券:给选中的用户发放同一张券(运营能力)"""
+    coupon_id: int
+    user_ids: List[int]
+
+
 class OrdersPaymentIn(CamelModel):
     order_number: str
     pay_method: int

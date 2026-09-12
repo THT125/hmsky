@@ -13,6 +13,7 @@ from app.routers.admin import (
     report as admin_report,
     setmeal as admin_setmeal,
     shop as admin_shop,
+    usermanage as admin_user,
     workspace as admin_workspace,
 )
 from app.routers.user import (
@@ -50,6 +51,7 @@ api_router.include_router(admin_shop.router)
 api_router.include_router(admin_common.router)
 api_router.include_router(admin_chat.router)
 api_router.include_router(admin_coupon.router)
+api_router.include_router(admin_user.router)
 
 # 用户端
 api_router.include_router(user_captcha.router)

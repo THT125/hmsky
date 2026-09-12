@@ -23,7 +23,7 @@ from app.core.redis import (
     redis_stock_deduct,
     redis_zincrby,
 )
-from app.models import AddressBook, Category, Dish, OrderDetail, Orders, Setmeal, ShoppingCart
+from app.models import AddressBook, Category, Dish, OrderDetail, Orders, Setmeal, ShoppingCart, User
 from app.schemas.business import OrdersSubmitIn
 from app.services.order_state import OrderStateMachine
 from app.services.shop_service import get_status
@@ -159,6 +159,14 @@ async def submit(db: AsyncSession, user_id: int, dto: OrdersSubmitIn) -> dict:
 
 
 async def _do_submit(db: AsyncSession, user_id: int, dto: OrdersSubmitIn) -> dict:
+    # 0. 封禁拦截(纵深防御):正常路径下封禁已清 Redis 会话 → token 失效进不来,
+    #    但 Redis 不可用时会话校验会降级放行,所以下单这条核心链路再查一次库兜底。
+    user = await db.get(User, user_id)
+    if user is None:
+        raise BizException("用户不存在")
+    if user.status == 0:
+        raise BizException("账号已被封禁,无法下单")
+
     # 1. 校验地址
     address = (
         await db.execute(

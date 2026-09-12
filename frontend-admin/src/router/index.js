@@ -13,6 +13,9 @@ const routes = [
     children: [
       { path: 'dashboard', name: 'Dashboard', component: () => import('../views/Dashboard.vue'), meta: { title: '工作台' } },
       { path: 'employee', name: 'Employee', component: () => import('../views/Employee.vue'), meta: { title: '员工管理' } },
+      // ⚠️ 路径必须是 users 不能是 user:nginx 有 location ~ ^/(admin|user|static)/,
+      // /user/5 这类地址会被反代到后端直接 404
+      { path: 'users', name: 'Users', component: () => import('../views/UserManage.vue'), meta: { title: '用户管理' } },
       { path: 'category', name: 'Category', component: () => import('../views/Category.vue'), meta: { title: '分类管理' } },
       { path: 'dish', name: 'Dish', component: () => import('../views/Dish.vue'), meta: { title: '菜品管理' } },
       { path: 'setmeal', name: 'Setmeal', component: () => import('../views/Setmeal.vue'), meta: { title: '套餐管理' } },

@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, Integer, String, func
+from sqlalchemy import BigInteger, DateTime, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -25,7 +25,12 @@ class EmployeeLoginLog(Base):
 class UserLoginLog(Base):
     """用户端登录日志(微信/手机号登录审计)"""
     __tablename__ = "user_login_log"
-    __table_args__ = {"comment": "用户端登录日志"}
+    # 索引服务于风控分析(按用户聚合 IP 分散度 / 按 IP 聚合多账号),并支撑详情页登录日志分页
+    __table_args__ = (
+        Index("idx_ull_user_time", "user_id", "create_time"),
+        Index("idx_ull_ip_time", "ip", "create_time"),
+        {"comment": "用户端登录日志"},
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     user_id: Mapped[Optional[int]] = mapped_column(BigInteger, comment="用户id(登录失败时可能为空)")

@@ -101,19 +101,19 @@ async def redis_expire(key: str, ttl_seconds: int):
     await r.expire(key, ttl_seconds)
 
 
-async def redis_get(key: str) -> Optional[str]:
+async def redis_get(key: str) -> Optional[str]:    #当前图片验证码在用
     """读取 KV,不存在返回 None"""
     r = get_redis()
     return await r.get(key)
 
 
-async def redis_set(key: str, value: str):
+async def redis_set(key: str, value: str):        
     """写入 KV(无过期时间,如库存长期 key)"""
     r = get_redis()
     await r.set(key, value)
 
 
-async def redis_incr(key: str, ttl_seconds: int) -> int:
+async def redis_incr(key: str, ttl_seconds: int) -> int:    #登录功能在用（记录失败次数）
     """计数自增(首次自动设 TTL),返回当前计数值"""
     r = get_redis()
     val = await r.incr(key)
@@ -122,7 +122,7 @@ async def redis_incr(key: str, ttl_seconds: int) -> int:
     return val
 
 
-async def redis_delete(key: str):
+async def redis_delete(key: str):      #当前图片验证码在用  ，登录功能在用（登录成功后失败次数清零）  ,清除会话:封禁即踢下线功能在用
     """删除 KV"""
     r = get_redis()
     await r.delete(key)

@@ -3,12 +3,14 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
-from app.models import AddressBook, Category, Dish, OrderDetail, Orders, Setmeal, ShopStatus, ShoppingCart
+from app.models import (AddressBook, Category, Dish, OrderDetail, Orders, Setmeal, ShopStatus,
+                        ShoppingCart, User)
 from app.schemas.business import OrdersSubmitIn
 from app.services import cart_service, dish_service, hot_service, order_service
 
 
 async def _seed(db, dish_id=1, setmeal_id=1):
+    db.add(User(id=1, username="order_user", phone="13900000001", status=1))  # 下单链路校验账号状态
     db.add(Category(id=1, type=1, name="菜品分类", sort=1, status=1))
     db.add(Category(id=2, type=2, name="套餐分类", sort=1, status=1))
     db.add(Dish(id=dish_id, name="热销菜", category_id=1, price=29.90, status=1))

@@ -60,6 +60,10 @@ const route = useRoute()
 const username = ref(localStorage.getItem('adminName') || '')
 const shopOpen = ref(true)
 let ws = null
+let reconnectTimer = null
+// 「组件已卸载」标记:没有它,退出登录时 ws.close() 会触发 onclose → 又排一次重连,
+// 留下永不释放的孤儿连接(用户端 HomeLayout 曾因此累积到每 2~3 秒一条)。
+let disposed = false
 
 // 店铺状态
 async function fetchShopStatus() {
@@ -72,6 +76,7 @@ async function toggleShop(val) {
 
 // WebSocket 推送(新订单/催单)
 function connectWs() {
+  if (disposed) return // 已卸载:不再建立新连接
   ws = new WebSocket(`ws://${location.host}/ws/admin-console`)
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data)
@@ -88,7 +93,10 @@ function connectWs() {
       window.dispatchEvent(new CustomEvent('chat-push-admin'))
     }
   }
-  ws.onclose = () => { setTimeout(connectWs, 5000) }
+  ws.onclose = () => {
+    if (disposed) return // 主动关闭(退出登录)→ 不重连
+    reconnectTimer = setTimeout(connectWs, 5000)
+  }
 }
 
 function logout() {
@@ -106,6 +114,8 @@ onMounted(() => {
   connectWs()
 })
 onBeforeUnmount(() => {
+  disposed = true
+  clearTimeout(reconnectTimer) // 取消已排期的重连
   if (ws) ws.close()
 })
 </script>

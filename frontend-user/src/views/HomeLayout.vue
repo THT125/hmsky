@@ -16,10 +16,16 @@ import { showNotify } from 'vant'
 
 const active = ref(0)
 let ws = null
+let reconnectTimer = null
+// 「组件已卸载」标记。没有它的话:卸载时 ws.close() 会触发 onclose → 又排一次重连,
+// 留下"孤儿重连循环"。本组件是布局组件,进出 /sign、/coupon、/chat、/hot、/address
+// 等同级路由都会卸载重建,孤儿循环越积越多,连接永不释放(实测 2~3 秒新增一条)。
+let disposed = false
 
 // WebSocket 连接(用户端):接收管理端订单状态变更推送(type=3)
 // sid 格式 user-{userId}-{随机}:后端按 userId 定向推送,其他用户收不到本用户订单通知
 function connectWs() {
+  if (disposed) return // 已卸载:不再建立新连接
   const userId = localStorage.getItem('userId') || '0'
   ws = new WebSocket(`ws://${location.host}/ws/user-${userId}-${Date.now()}`)
   ws.onmessage = (e) => {
@@ -43,9 +49,16 @@ function connectWs() {
       }
     } catch {}
   }
-  ws.onclose = () => { setTimeout(connectWs, 5000) }
+  ws.onclose = () => {
+    if (disposed) return // 主动关闭(组件卸载)→ 不重连
+    reconnectTimer = setTimeout(connectWs, 5000)
+  }
 }
 
 onMounted(connectWs)
-onBeforeUnmount(() => { if (ws) ws.close() })
+onBeforeUnmount(() => {
+  disposed = true
+  clearTimeout(reconnectTimer) // 取消已排期的重连
+  if (ws) ws.close()
+})
 </script>

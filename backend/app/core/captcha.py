@@ -6,11 +6,15 @@ import random
 
 from PIL import Image, ImageDraw, ImageFont
 
+from app.core.config import BASE_DIR
+
 logger = logging.getLogger("uvicorn.error")
 
 WIDTH, HEIGHT = 120, 40
 CODE_LEN = 4
-_FONT_PATH = r"backend\assets\font\Arial.ttf"  # 优先英文字体(数字更清晰);不存在则用默认字体
+# 字体用【绝对路径】:相对路径以进程工作目录为基准,本地(仓库根)与容器(/app)不一致;
+# 且必须用 pathlib 拼 —— 写死 Windows 反斜杠在 Linux 上会被当成普通字符而永远找不到。
+_FONT_PATH = str(BASE_DIR / "assets" / "font" / "Arial.ttf")
 
 
 def _font(size: int):
@@ -18,7 +22,10 @@ def _font(size: int):
         return ImageFont.truetype(_FONT_PATH, size)
     except Exception as e:
         logger.warning("验证码字体加载失败,降级默认字体: %s", e)
-        return ImageFont.load_default()
+        try:
+            return ImageFont.load_default(size)  # Pillow ≥10.1 支持指定字号,降级也不至于太小
+        except TypeError:
+            return ImageFont.load_default()
 
 
 def generate_captcha() -> tuple[str, str]:

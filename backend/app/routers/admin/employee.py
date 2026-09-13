@@ -136,7 +136,9 @@ async def page(name: Optional[str] = None,
     - Result: 分页结果 {total, records}。
     """
     total, rows = await employee_service.page_query(db, name, page, pageSize)
-    return ok(page_result(total, [to_camel_dict(r) for r in rows]))
+    # ⚠️ 必须排除 password:否则任何登录员工都能从本接口拿到全公司的 bcrypt 密码哈希
+    # (下方 get_by_id 接口一直是手工挑字段的,分页这里曾经漏了)
+    return ok(page_result(total, [to_camel_dict(r, exclude=("password",)) for r in rows]))
 
 
 @router.delete("/{emp_id}")

@@ -44,10 +44,15 @@ async def push_chat_message(target: str, user_id: Optional[int], payload: dict):
 async def websocket_endpoint(websocket: WebSocket, sid: str):
     await websocket.accept()
     ws_manager.connect(sid, websocket)
+    # 连接/断开用 INFO 对称记录:排查连接泄漏时要靠这两个数对账。
+    # 之前断开记的是 DEBUG(低于默认 INFO 级别),日志里只有 open 没有 close,
+    # 排查时会被误读成"连接永不关闭"。
+    logger.info("WebSocket 已连接 %s", sid)
     try:
         while True:
             await websocket.receive_text()  # 保持连接,忽略客户端消息
     except Exception as e:
-        logger.debug("WebSocket连接 %s 断开: %s", sid, e)  # 客户端断开属正常现象,仅 debug 记录
+        logger.debug("WebSocket 断开原因 %s: %s", sid, e)  # 客户端正常断开也会走这里,不刷 INFO
     finally:
         ws_manager.disconnect(sid)
+        logger.info("WebSocket 已断开 %s", sid)

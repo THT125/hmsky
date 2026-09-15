@@ -82,6 +82,12 @@ services:
       CAPTCHA_ENABLED: "1"
       LOGIN_FAIL_MAX: "5"
       LOGIN_FAIL_LOCK_MINUTES: "10"
+      # 日志告警(飞书群机器人):URL 为空则关闭,不影响业务。
+      # ⚠️ compose 的 environment 是显式白名单 —— 值写在根目录 .env,但必须在这里声明,
+      #    否则容器里读不到(与 UVICORN_WORKERS 同理)
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_WEBHOOK_SECRET: ${ALERT_WEBHOOK_SECRET:-}
+      ALERT_KEYWORD: ${ALERT_KEYWORD:-}
     volumes:
       - ./backend/static:/app/static       # 本地上传文件持久化
     healthcheck:

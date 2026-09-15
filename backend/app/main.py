@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.core.alert import setup_alert
 from app.core.config import STATIC_DIR
 from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
@@ -16,6 +17,7 @@ from app.websocket.ws import websocket_endpoint, ws_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_alert()  # 日志告警(未配置 ALERT_WEBHOOK_URL 则静默跳过)
     scheduler = create_scheduler()
     scheduler.start()
     ws_manager.start_listener()  # WebSocket 跨进程广播订阅(多 worker 部署必需)

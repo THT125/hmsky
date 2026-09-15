@@ -78,6 +78,14 @@ SMS_ACCESS_KEY = _get("SMS_ACCESS_KEY")
 SMS_SECRET = _get("SMS_SECRET")
 SMS_SIGN_NAME = _get("SMS_SIGN_NAME", "你饿了吗")
 
+# ===== 日志告警(飞书群机器人)=====
+# WEBHOOK_URL 留空 = 关闭告警(代码照常运行,只是不推送)
+ALERT_WEBHOOK_URL = _get("ALERT_WEBHOOK_URL")
+# 安全设置选「签名校验」时填;留空则不带签名
+ALERT_WEBHOOK_SECRET = _get("ALERT_WEBHOOK_SECRET")
+# 安全设置选「自定义关键词」时填;留空则不拼关键词
+ALERT_KEYWORD = _get("ALERT_KEYWORD")
+
 # ===== 调试 =====
 DB_ECHO = _get("DB_ECHO", "0") == "1"
 
